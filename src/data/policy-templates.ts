@@ -1396,6 +1396,133 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       },
     },
   },
+  {
+    id: "ztca-block-admin-portal",
+    displayName: "ZTCA - BLOCK - AdminPortal",
+    category: "ztca",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary: "Block access to admin portals for all users except explicitly allowed",
+    rationale:
+      "Admin portals (Azure Portal, Microsoft 365 Admin Center, Intune, Entra) are high-value targets. Blocking access by default and requiring explicit group membership follows zero-trust least-privilege principles.",
+    fingerprint: {
+      includeApps: [
+        "797f4846-ba00-4fd7-ba43-dac1f8f63013", // Microsoft Azure Management
+        "MicrosoftAdminPortals", // Microsoft Admin Portals service
+      ],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - ZTCA - BLOCK - AdminPortal",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [
+            "MicrosoftAdminPortals",
+          ],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "ztca-block-all-apps-exclude-global",
+    displayName: "ZTCA - GLOBAL - BLOCK - AllApps - Exclude-CA-Global",
+    category: "ztca",
+    controlType: "BLOCK",
+    priority: "optional",
+    summary: "Zero-trust catch-all: block all apps for all users except CA-Global exclusion group",
+    rationale:
+      "The ultimate zero-trust deny-all policy. Blocks everything unless another policy explicitly grants access. Users must be in the CA-Global exclusion group to bypass. Ensures no implicit access exists.",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - ZTCA - GLOBAL - BLOCK - AllApps - Exclude-CA-Global",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "ztca-block-all-apps-exclude-trusted-location",
+    displayName: "ZTCA - INTUNE - BLOCK - AllApps - Exclude-TrustedLocation",
+    category: "ztca",
+    controlType: "BLOCK",
+    priority: "optional",
+    summary: "Block all apps from non-trusted locations as a zero-trust location safeguard",
+    rationale:
+      "Enforces location-based access control at the highest level. All app access is blocked unless originating from a trusted location (e.g., corporate network, VPN). Pairs with Intune compliance for defense-in-depth.",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      usesLocationCondition: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - ZTCA - INTUNE - BLOCK - AllApps - Exclude-TrustedLocation",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        locations: {
+          includeLocations: ["All"],
+          excludeLocations: ["AllTrusted"],
+        },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
 
   // ═══════════════════════════════════════════════════════════════════════
   // AGENT POLICIES
@@ -1441,16 +1568,61 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     },
   },
   {
-    id: "agent-token-protection",
-    displayName: "GLOBAL - SESSION - Windows - TokenProtection",
+    id: "agent-block-non-trusted",
+    displayName: "AGENT - BLOCK - NonTrustedAgents",
     category: "agent",
-    controlType: "SESSION",
-    priority: "optional",
-    summary: "Enable token protection (token binding) for Windows desktop clients",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary: "Block agent identities that are not explicitly approved via security attributes",
     rationale:
-      "Token protection binds tokens to the device, preventing token theft and replay attacks. This is especially important for Windows devices accessing sensitive resources.",
+      "Enforces an allowlist model for agent identities. Only agents with the SecurityAttribute AgentApproved=true are permitted to authenticate. Blocks rogue, misconfigured, or unapproved agents from accessing resources.",
     fingerprint: {
       includeApps: ["All"],
+      grantControls: ["block"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - AGENT - BLOCK - NonTrustedAgents",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "baseline-session-token-protection",
+    displayName: "GLOBAL - SESSION - Windows - TokenProtection",
+    category: "baseline",
+    controlType: "SESSION",
+    priority: "recommended",
+    summary: "Enable token protection (token binding) for Windows desktop clients",
+    rationale:
+      "Token protection binds tokens to the device, preventing token theft and replay attacks (Pass-the-Token / Pass-the-Hash). Critical for Windows devices accessing Exchange, SharePoint, Teams, and other M365 workloads.",
+    fingerprint: {
+      includeApps: [
+        "9cdead84-a844-4324-93f2-b2e6bb768d07", // Azure Virtual Desktop Client
+        "270efc09-cd0d-444b-a71f-39af4910ec45", // Windows 365
+        "0af06dc6-e4b5-4f28-818e-e78e62d137a5", // Microsoft Teams
+        "00000003-0000-0ff1-ce00-000000000000", // SharePoint Online
+        "00000002-0000-0ff1-ce00-000000000000", // Exchange Online
+        "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe", // Microsoft Stream
+      ],
       targetsAllUsers: true,
       clientAppTypes: ["mobileAppsAndDesktopClients"],
       platforms: { include: ["windows"], exclude: [] },
@@ -1468,7 +1640,14 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
           excludeRoles: [],
         },
         applications: {
-          includeApplications: ["All"],
+          includeApplications: [
+            "9cdead84-a844-4324-93f2-b2e6bb768d07",
+            "270efc09-cd0d-444b-a71f-39af4910ec45",
+            "0af06dc6-e4b5-4f28-818e-e78e62d137a5",
+            "00000003-0000-0ff1-ce00-000000000000",
+            "00000002-0000-0ff1-ce00-000000000000",
+            "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe",
+          ],
           excludeApplications: [],
           includeUserActions: [],
         },
@@ -1540,9 +1719,9 @@ export const CATEGORY_META: Record<
     icon: "🔒",
   },
   agent: {
-    label: "Agent / Token Protection",
+    label: "Agent Identity",
     description:
-      "Policies for AI agents and token-binding protection.",
+      "Policies for Microsoft Entra Agent Identities — cloud sync agents, connectors, and non-human agent objects.",
     icon: "🤖",
   },
 };
