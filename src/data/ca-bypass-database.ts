@@ -1,0 +1,248 @@
+/**
+ * Conditional Access Bypass Database
+ * Source: Fabian Bader & Dirk-jan Mollema research (TROOPERS25)
+ *         https://cloudbrothers.info/en/conditional-access-bypasses/
+ *         https://entrascopes.com
+ *
+ * Documents known resources, scopes, and app combinations that bypass
+ * specific Conditional Access grant controls.
+ */
+
+// ─── Resources Completely Excluded from CA ───────────────────────────────────
+// These resources NEVER have CA enforced (status: notApplied in SigninLogs)
+// Ref: Fabian Bader - "Resources completely excluded from Conditional Access"
+
+export interface CAImmuneResource {
+  resourceId: string;
+  displayName: string;
+  risk: "high" | "medium" | "low";
+  description: string;
+}
+
+export const CA_IMMUNE_RESOURCES: CAImmuneResource[] = [
+  {
+    resourceId: "26a4ae64-5862-427f-a9b0-044e62572a4f",
+    displayName: "Microsoft Intune Checkin",
+    risk: "medium",
+    description:
+      "Device check-in for Intune. CA always shows notApplied. Can be used for password verification without triggering MFA failure logs.",
+  },
+  {
+    resourceId: "04436913-cf0d-4d2a-9cc6-2ffe7f1d3d1c",
+    displayName: "Windows Notification Service",
+    risk: "low",
+    description: "Push notification service. CA enforcement not possible.",
+  },
+  {
+    resourceId: "0a5f63c0-b750-4f38-a71c-4fc0d58b89e2",
+    displayName: "Microsoft Mobile Application Management",
+    risk: "medium",
+    description:
+      "MAM policy service. CA always notApplied. Any app with pre-consented permissions can access without CA.",
+  },
+  {
+    resourceId: "1f5530b3-261a-47a9-b357-ded261e17918",
+    displayName: "Azure Multi-Factor Auth Connector",
+    risk: "medium",
+    description:
+      "MFA connector resource. Ironically cannot be protected by CA MFA requirement. Can be used for password spraying without 50074 errors.",
+  },
+  {
+    resourceId: "c2ada927-a9e2-4564-aae2-70775a2fa0af",
+    displayName: "OCaaS Client Interaction Service",
+    risk: "low",
+    description: "Office client interaction service. CA enforcement not possible.",
+  },
+  {
+    resourceId: "ff9ebd75-fe62-434a-a6ce-b3f0a8592eaf",
+    displayName: "Authenticator App",
+    risk: "medium",
+    description:
+      "Authenticator app resource. CA always notApplied. Required for passwordless flows.",
+  },
+];
+
+// ─── Known CA Bypass App IDs (Non-FOCI) ──────────────────────────────────────
+// Apps with known CA bypasses that are NOT in the FOCI family
+
+export interface CABypassApp {
+  appId: string;
+  displayName: string;
+  isPublicClient: boolean;
+  caBypassCount: number;
+  description: string;
+}
+
+export const CA_BYPASS_APPS: CABypassApp[] = [
+  {
+    appId: "04b07795-8ddb-461a-bbee-02f9e1bf7b46",
+    displayName: "Microsoft Azure CLI",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Azure CLI - 462 resources. Public client with CA bypass capability.",
+  },
+  {
+    appId: "1950a258-227b-4e31-a9cf-717495945fc2",
+    displayName: "Microsoft Azure PowerShell",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Azure PowerShell - 649 resources. Broadest resource access of any non-FOCI app.",
+  },
+  {
+    appId: "1b730954-1685-4b74-9bfd-dac224a7b894",
+    displayName: "Azure Active Directory PowerShell",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "AAD PowerShell - 260 resources. Legacy module with broad directory access.",
+  },
+  {
+    appId: "cb1056e2-e479-49de-ae31-7812af012ed8",
+    displayName: "Microsoft Azure Active Directory Connect",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "AAD Connect - 262 resources. Hybrid identity sync with broad access.",
+  },
+  {
+    appId: "aebc6443-996d-45c2-90f0-388ff96faa56",
+    displayName: "Visual Studio Code",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "VS Code - 77 resources. IDE with Azure extension access.",
+  },
+  {
+    appId: "fc0f3af4-6835-4174-b806-f7db311fd2f3",
+    displayName: "Microsoft Intune Windows Agent",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Intune agent - device enrollment bypasses compliant device requirement.",
+  },
+  {
+    appId: "dd762716-544d-4aeb-a526-687b73838a22",
+    displayName: "Microsoft Device Registration Client",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Device registration - bypasses location-based CA. Only MFA can protect.",
+  },
+  {
+    appId: "de50c81f-5f80-4771-b66b-cebd28ccdfc1",
+    displayName: "Device Management Client",
+    isPublicClient: true,
+    caBypassCount: 0,
+    description: "Device Management - 1590 resources! Broadest resource access of ANY app.",
+  },
+  {
+    appId: "a672d62c-fc7b-4e81-a576-e60dc46e951d",
+    displayName: "Microsoft Power Query for Excel",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Power Query - 70 resources. Data connection with broad access.",
+  },
+  {
+    appId: "cf710c6e-dfcc-4fa8-a093-d47294e44c66",
+    displayName: "Azure Analysis Services Client",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Analysis Services - 15 resources.",
+  },
+  {
+    appId: "c58637bb-e2e1-4312-8a00-04b5ffcd3403",
+    displayName: "SharePoint Online Client Extensibility",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "SPO extensibility - 22 resources.",
+  },
+  {
+    appId: "268761a2-03f3-40df-8a8b-c3db24145b6b",
+    displayName: "Universal Store Native Client",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Windows Store - 21 resources.",
+  },
+  {
+    appId: "1b3c667f-cde3-4090-b60b-3d2abd0117f0",
+    displayName: "Windows Spotlight",
+    isPublicClient: true,
+    caBypassCount: 1,
+    description: "Windows Spotlight - 17 resources.",
+  },
+];
+
+// ─── Resource Exclusion Bypass ───────────────────────────────────────────────
+// When ANY resource is excluded from an "All cloud apps" policy, these
+// resource+scope combos become unprotected (Microsoft documented behavior).
+
+export interface ResourceExclusionBypass {
+  resourceId: string;
+  resourceName: string;
+  bypassedScopes: string[];
+  description: string;
+}
+
+export const RESOURCE_EXCLUSION_BYPASSES: ResourceExclusionBypass[] = [
+  {
+    resourceId: "00000002-0000-0000-c000-000000000000",
+    resourceName: "Azure AD Graph (Windows Azure Active Directory)",
+    bypassedScopes: ["email", "offline_access", "openid", "profile", "User.Read"],
+    description:
+      "If you exclude ANY resource from an 'All cloud apps' policy, these Azure AD Graph scopes become unprotected. Allows reading basic user profile data.",
+  },
+  {
+    resourceId: "00000003-0000-0000-c000-000000000000",
+    resourceName: "Microsoft Graph",
+    bypassedScopes: [
+      "email",
+      "offline_access",
+      "openid",
+      "profile",
+      "User.Read",
+      "People.Read",
+    ],
+    description:
+      "If you exclude ANY resource from an 'All cloud apps' policy, these MS Graph scopes become unprotected. Allows reading user profile AND people data.",
+  },
+];
+
+// ─── Device Registration Bypass ──────────────────────────────────────────────
+
+export const DEVICE_REGISTRATION_RESOURCE = {
+  resourceId: "01cb2876-7ebd-4aa4-9cc9-d28bd4d359a9",
+  displayName: "Device Registration Service",
+  description:
+    "Cannot be protected by location-based CA or compliant device requirement. ONLY MFA grant control works. An attacker could register a device from an untrusted location if MFA is not required. (MSRC VULN-153600 - confirmed by-design)",
+};
+
+// ─── Well-Known App Categories ───────────────────────────────────────────────
+// Categorize common first-party Microsoft apps for the analyzer
+
+export interface WellKnownApp {
+  appId: string;
+  displayName: string;
+  category: string;
+  sensitivity: "critical" | "high" | "medium" | "low";
+}
+
+export const WELL_KNOWN_APPS: WellKnownApp[] = [
+  // Admin & Identity
+  { appId: "00000003-0000-0000-c000-000000000000", displayName: "Microsoft Graph", category: "Identity & API", sensitivity: "critical" },
+  { appId: "00000002-0000-0000-c000-000000000000", displayName: "Azure AD Graph (Legacy)", category: "Identity & API", sensitivity: "critical" },
+  { appId: "797f4846-ba00-4fd7-ba43-dac1f8f63013", displayName: "Azure Resource Manager", category: "Azure Management", sensitivity: "critical" },
+  { appId: "0000000a-0000-0000-c000-000000000000", displayName: "Microsoft Intune", category: "Device Management", sensitivity: "high" },
+  // Productivity
+  { appId: "00000002-0000-0ff1-ce00-000000000000", displayName: "Office 365 Exchange Online", category: "Productivity", sensitivity: "high" },
+  { appId: "00000003-0000-0ff1-ce00-000000000000", displayName: "Office 365 SharePoint Online", category: "Productivity", sensitivity: "high" },
+  { appId: "cc15fd57-2c6c-4117-a88c-83b1d56b4bbe", displayName: "Microsoft Teams Services", category: "Productivity", sensitivity: "high" },
+  // Security
+  { appId: "fc780465-2017-40d4-a0c5-307022471b92", displayName: "WindowsDefenderATP", category: "Security", sensitivity: "critical" },
+  { appId: "826870f9-9fbb-4f23-81b8-3a957080dfa2", displayName: "Security Copilot", category: "Security", sensitivity: "critical" },
+  // Power Platform
+  { appId: "00000007-0000-0000-c000-000000000000", displayName: "Dataverse", category: "Power Platform", sensitivity: "medium" },
+  { appId: "7df0a125-d3be-4c96-aa54-591f83ff541c", displayName: "Microsoft Flow Service", category: "Power Platform", sensitivity: "medium" },
+];
+
+export const WELL_KNOWN_APP_MAP = new Map<string, WellKnownApp>(
+  WELL_KNOWN_APPS.map((app) => [app.appId.toLowerCase(), app])
+);
+
+export const CA_IMMUNE_RESOURCE_MAP = new Map<string, CAImmuneResource>(
+  CA_IMMUNE_RESOURCES.map((r) => [r.resourceId.toLowerCase(), r])
+);

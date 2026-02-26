@@ -1,0 +1,819 @@
+/**
+ * Conditional Access Policy Analyzer Engine
+ *
+ * Evaluates CA policies against best practices derived from:
+ *   - Fabian Bader's "Conditional Access bypasses" research
+ *   - EntraScopes.com FOCI family data
+ *   - Microsoft documentation
+ *   - Swiss-cheese defense model principles
+ */
+
+import {
+  ConditionalAccessPolicy,
+  NamedLocation,
+  ServicePrincipal,
+  TenantContext,
+} from "./graph-client";
+import { isFociApp, getFociApp, getFociFamily } from "@/data/foci-families";
+import {
+  CA_IMMUNE_RESOURCE_MAP,
+  RESOURCE_EXCLUSION_BYPASSES,
+  DEVICE_REGISTRATION_RESOURCE,
+  WELL_KNOWN_APP_MAP,
+  CA_BYPASS_APPS,
+} from "@/data/ca-bypass-database";
+
+// ─── Finding Types ───────────────────────────────────────────────────────────
+
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
+
+export interface Finding {
+  id: string;
+  policyId: string;
+  policyName: string;
+  severity: Severity;
+  category: string;
+  title: string;
+  description: string;
+  recommendation: string;
+  /** Optional list of related app/resource IDs for cross-referencing */
+  relatedIds?: string[];
+}
+
+export interface AnalysisResult {
+  tenantSummary: TenantSummary;
+  policyResults: PolicyResult[];
+  findings: Finding[];
+  overallScore: number; // 0-100
+}
+
+export interface TenantSummary {
+  totalPolicies: number;
+  enabledPolicies: number;
+  reportOnlyPolicies: number;
+  disabledPolicies: number;
+  totalFindings: number;
+  criticalFindings: number;
+  highFindings: number;
+  mediumFindings: number;
+  lowFindings: number;
+  infoFindings: number;
+}
+
+export interface PolicyResult {
+  policy: ConditionalAccessPolicy;
+  findings: Finding[];
+  visualization: PolicyVisualization;
+}
+
+// ─── Visualization Model ─────────────────────────────────────────────────────
+
+export interface PolicyVisualization {
+  targetUsers: string;
+  targetApps: string;
+  conditions: string[];
+  grantControls: string[];
+  sessionControls: string[];
+  state: string;
+}
+
+// ─── Main Analyzer ───────────────────────────────────────────────────────────
+
+let findingCounter = 0;
+function nextFindingId(): string {
+  return `F-${String(++findingCounter).padStart(4, "0")}`;
+}
+
+export function analyzeAllPolicies(context: TenantContext): AnalysisResult {
+  findingCounter = 0;
+  const findings: Finding[] = [];
+  const policyResults: PolicyResult[] = [];
+
+  for (const policy of context.policies) {
+    const policyFindings: Finding[] = [];
+
+    // Run all checks
+    policyFindings.push(
+      ...checkFociExclusions(policy, context),
+      ...checkResourceExclusion(policy, context),
+      ...checkCAImmuneResources(policy),
+      ...checkGrantControlOperator(policy),
+      ...checkDeviceRegistrationBypass(policy),
+      ...checkServicePrincipalExclusions(policy, context),
+      ...checkMissingMFA(policy),
+      ...checkAllUsersAllApps(policy),
+      ...checkReportOnlyState(policy),
+      ...checkSessionControls(policy),
+      ...checkLocationConditions(policy, context),
+      ...checkLegacyAuth(policy),
+      ...checkCABypassApps(policy, context)
+    );
+
+    findings.push(...policyFindings);
+
+    policyResults.push({
+      policy,
+      findings: policyFindings,
+      visualization: buildVisualization(policy, context),
+    });
+  }
+
+  // Tenant-wide checks
+  findings.push(...checkTenantWideGaps(context));
+
+  const summary = buildSummary(context, findings);
+  const overallScore = calculateScore(summary);
+
+  return { tenantSummary: summary, policyResults, findings, overallScore };
+}
+
+// ─── Check: FOCI Family Exclusions ───────────────────────────────────────────
+
+function checkFociExclusions(
+  policy: ConditionalAccessPolicy,
+  context: TenantContext
+): Finding[] {
+  const findings: Finding[] = [];
+  const excluded = policy.conditions.applications.excludeApplications;
+
+  for (const appId of excluded) {
+    if (isFociApp(appId)) {
+      const app = getFociApp(appId)!;
+      const family = getFociFamily(appId);
+      const familyNames = family.map((f) => f.displayName).slice(0, 8);
+
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "critical",
+        category: "FOCI Token Sharing",
+        title: `Excluded FOCI app "${app.displayName}" shares tokens with ${family.length} other apps`,
+        description:
+          `"${app.displayName}" (${appId}) is excluded from this policy and belongs to the FOCI (Family of Client IDs) family. ` +
+          `FOCI apps share refresh tokens, meaning any FOCI app can obtain an access token for any other FOCI family member. ` +
+          `Excluding one effectively excludes ALL: ${familyNames.join(", ")}${family.length > 8 ? "…" : ""}.`,
+        recommendation:
+          "Remove the exclusion or accept that ALL 45+ FOCI family apps are effectively excluded. " +
+          "Consider targeting specific apps in a separate policy instead of excluding from a broad policy.",
+        relatedIds: family.map((f) => f.appId),
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Check: Resource Exclusion Bypass (Basic Scopes Leak) ────────────────────
+
+function checkResourceExclusion(
+  policy: ConditionalAccessPolicy,
+  _context: TenantContext
+): Finding[] {
+  const findings: Finding[] = [];
+  const apps = policy.conditions.applications;
+
+  const includesAll = apps.includeApplications.includes("All");
+  const hasExclusions = apps.excludeApplications.length > 0;
+
+  if (includesAll && hasExclusions) {
+    const excludedNames = apps.excludeApplications
+      .map((id) => {
+        const known = WELL_KNOWN_APP_MAP.get(id.toLowerCase());
+        return known ? known.displayName : id;
+      })
+      .join(", ");
+
+    for (const bypass of RESOURCE_EXCLUSION_BYPASSES) {
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "high",
+        category: "Resource Exclusion Bypass",
+        title: `Excluding apps from "All cloud apps" leaks ${bypass.resourceName} scopes`,
+        description:
+          `This policy targets "All cloud apps" but excludes: ${excludedNames}. ` +
+          `When ANY resource is excluded, the following scopes for ${bypass.resourceName} become unprotected: ` +
+          `${bypass.bypassedScopes.join(", ")}. ${bypass.description}`,
+        recommendation:
+          "Avoid excluding resources from 'All cloud apps' policies. " +
+          "Instead, create a separate less-restrictive policy for the apps that need exemption " +
+          "while keeping the base policy without exclusions.",
+        relatedIds: [bypass.resourceId],
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Check: CA-Immune Resources ──────────────────────────────────────────────
+
+function checkCAImmuneResources(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  const findings: Finding[] = [];
+  const apps = policy.conditions.applications;
+
+  if (apps.includeApplications.includes("All")) {
+    // If targeting All apps, warn about immune resources
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "info",
+      category: "CA-Immune Resources",
+      title: "Some Microsoft resources are immune to Conditional Access",
+      description:
+        'Even when targeting "All cloud apps", 6 Microsoft resources are always excluded from CA: ' +
+        "Microsoft Intune Checkin, Windows Notification Service, Microsoft Mobile Application Management, " +
+        "Azure MFA Connector, OCaaS Client Interaction Service, and Authenticator App. " +
+        "These will show 'notApplied' in sign-in logs.",
+      recommendation:
+        "Be aware that these resources can be used for password verification without triggering CA failures. " +
+        "Monitor sign-in logs specifically for these resource IDs.",
+    });
+  }
+
+  return findings;
+}
+
+// ─── Check: Grant Control Operator (AND vs OR) ──────────────────────────────
+
+function checkGrantControlOperator(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  const findings: Finding[] = [];
+  const grant = policy.grantControls;
+
+  if (!grant || grant.builtInControls.length <= 1) return findings;
+
+  if (grant.operator === "OR") {
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "high",
+      category: "Swiss Cheese Model",
+      title: 'Grant controls use "OR" — weakest control is effective',
+      description:
+        `This policy requires ${grant.builtInControls.join(" OR ")}. ` +
+        `With the OR operator, only the WEAKEST control needs to be satisfied. ` +
+        `This contradicts the Swiss cheese model of layered security.`,
+      recommendation:
+        'Change the operator to "AND" so ALL controls must be satisfied, or ' +
+        "split into separate policies each requiring a single control. " +
+        "Per Fabian Bader: use AND, not OR, for grant controls.",
+    });
+  }
+
+  return findings;
+}
+
+// ─── Check: Device Registration Bypass ───────────────────────────────────────
+
+function checkDeviceRegistrationBypass(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  const findings: Finding[] = [];
+  const apps = policy.conditions.applications;
+  const grant = policy.grantControls;
+  const locations = policy.conditions.locations;
+
+  const targetsDRS =
+    apps.includeApplications.includes(DEVICE_REGISTRATION_RESOURCE.resourceId) ||
+    apps.includeApplications.includes("All");
+
+  const usesLocationCondition = locations &&
+    (locations.includeLocations.length > 0 || locations.excludeLocations.length > 0);
+
+  const requiresCompliantDevice =
+    grant?.builtInControls.includes("compliantDevice") ||
+    grant?.builtInControls.includes("domainJoinedDevice");
+
+  if (targetsDRS && (usesLocationCondition || requiresCompliantDevice)) {
+    const issues: string[] = [];
+    if (usesLocationCondition) issues.push("location-based conditions");
+    if (requiresCompliantDevice) issues.push("compliant/hybrid-joined device requirement");
+
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "high",
+      category: "Device Registration Bypass",
+      title: `Device Registration Service bypasses ${issues.join(" and ")}`,
+      description:
+        `This policy uses ${issues.join(" and ")}, but the Device Registration Service ` +
+        `(${DEVICE_REGISTRATION_RESOURCE.resourceId}) can ONLY be protected by MFA grant controls. ` +
+        `Location conditions and device compliance requirements are ignored for device registration. ` +
+        `(MSRC VULN-153600 — confirmed by-design by Microsoft)`,
+      recommendation:
+        "Ensure you have a separate policy requiring MFA for the Device Registration Service. " +
+        "Do not rely solely on location or device compliance to protect device enrollment.",
+      relatedIds: [DEVICE_REGISTRATION_RESOURCE.resourceId],
+    });
+  }
+
+  return findings;
+}
+
+// ─── Check: Service Principal Exclusions ─────────────────────────────────────
+
+function checkServicePrincipalExclusions(
+  policy: ConditionalAccessPolicy,
+  context: TenantContext
+): Finding[] {
+  const findings: Finding[] = [];
+  const excluded = policy.conditions.applications.excludeApplications;
+
+  for (const appId of excluded) {
+    if (isFociApp(appId)) continue; // Already handled in FOCI check
+
+    const sp = context.servicePrincipals.get(appId.toLowerCase());
+    const bypassApp = CA_BYPASS_APPS.find(
+      (a) => a.appId.toLowerCase() === appId.toLowerCase()
+    );
+
+    if (sp || bypassApp) {
+      const name = sp?.displayName ?? bypassApp?.displayName ?? appId;
+      const desc = bypassApp?.description ?? `Service principal: ${sp?.servicePrincipalType}`;
+
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: bypassApp ? "high" : "medium",
+        category: "App Exclusion",
+        title: `Excluded app: "${name}"`,
+        description:
+          `"${name}" (${appId}) is excluded from this policy. ${desc}` +
+          (bypassApp?.caBypassCount
+            ? ` This app has ${bypassApp.caBypassCount} known CA bypass(es).`
+            : ""),
+        recommendation:
+          "Review whether this exclusion is necessary. Excluded apps bypass the policy's controls. " +
+          "Consider using a separate targeted policy with reduced controls instead of excluding.",
+        relatedIds: [appId],
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Check: Missing MFA ─────────────────────────────────────────────────────
+
+function checkMissingMFA(policy: ConditionalAccessPolicy): Finding[] {
+  const findings: Finding[] = [];
+  const grant = policy.grantControls;
+  if (policy.state === "disabled") return findings;
+
+  const requiresMfa =
+    grant?.builtInControls.includes("mfa") ||
+    grant?.authenticationStrength != null;
+
+  if (!requiresMfa && grant && grant.builtInControls.length > 0) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "medium",
+      category: "Swiss Cheese Model",
+      title: "Policy does not require MFA",
+      description:
+        `This policy grants access with: ${grant.builtInControls.join(", ")} but does not require MFA. ` +
+        `Per the Swiss cheese model, MFA should be the bare minimum requirement layered under everything else.`,
+      recommendation:
+        "Add MFA as a grant control requirement. MFA should be the baseline layer of defense. " +
+        "Consider using Authentication Strengths for phishing-resistant MFA.",
+    });
+  }
+
+  return findings;
+}
+
+// ─── Check: All Users + All Apps Coverage ────────────────────────────────────
+
+function checkAllUsersAllApps(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  const findings: Finding[] = [];
+  const { users, applications } = policy.conditions;
+
+  const targetsAllUsers = users.includeUsers.includes("All");
+  const targetsAllApps = applications.includeApplications.includes("All");
+
+  if (targetsAllUsers && targetsAllApps && policy.state === "enabled") {
+    const hasUserExclusions =
+      users.excludeUsers.length > 0 ||
+      users.excludeGroups.length > 0 ||
+      users.excludeRoles.length > 0;
+    const hasAppExclusions = applications.excludeApplications.length > 0;
+
+    if (hasUserExclusions || hasAppExclusions) {
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "medium",
+        category: "Policy Scope",
+        title: "Broad policy with exclusions — review for gaps",
+        description:
+          `This policy targets All Users and All Cloud Apps but has exclusions. ` +
+          `User exclusions: ${users.excludeUsers.length + users.excludeGroups.length + users.excludeRoles.length}, ` +
+          `App exclusions: ${applications.excludeApplications.length}. ` +
+          `Exclusions create potential bypass paths.`,
+        recommendation:
+          "Regularly audit exclusions. Use break-glass accounts sparingly. " +
+          "Ensure every excluded entity is documented with a business justification.",
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Check: Report-Only Policies ─────────────────────────────────────────────
+
+function checkReportOnlyState(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  if (policy.state !== "enabledForReportingButNotEnforced") return [];
+
+  return [
+    {
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "info",
+      category: "Policy State",
+      title: "Policy is in report-only mode",
+      description:
+        "This policy is enabled for reporting but NOT enforced. " +
+        "It will log what WOULD happen but takes no action.",
+      recommendation:
+        "Review sign-in logs to validate the policy's impact, then enable enforcement when ready.",
+    },
+  ];
+}
+
+// ─── Check: Session Controls ─────────────────────────────────────────────────
+
+function checkSessionControls(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  const findings: Finding[] = [];
+  const session = policy.sessionControls;
+  if (!session || policy.state === "disabled") return findings;
+
+  if (session.disableResilienceDefaults) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: policy.id,
+      policyName: policy.displayName,
+      severity: "medium",
+      category: "Resilience",
+      title: "Resilience defaults are disabled",
+      description:
+        "This policy disables resilience defaults, which means users may be blocked during an Entra ID outage.",
+      recommendation:
+        "Only disable resilience defaults if strict real-time policy evaluation is required. " +
+        "For most organizations, keeping resilience defaults improves availability.",
+    });
+  }
+
+  return findings;
+}
+
+// ─── Check: Location Conditions ──────────────────────────────────────────────
+
+function checkLocationConditions(
+  policy: ConditionalAccessPolicy,
+  context: TenantContext
+): Finding[] {
+  const findings: Finding[] = [];
+  const locations = policy.conditions.locations;
+  if (!locations || policy.state === "disabled") return findings;
+
+  // Check for untrusted named locations
+  for (const locId of locations.includeLocations) {
+    const loc = context.namedLocations.find((l) => l.id === locId);
+    if (loc && loc.isTrusted === false) {
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "low",
+        category: "Location Configuration",
+        title: `Named location "${loc.displayName}" is not marked as trusted`,
+        description:
+          `The named location "${loc.displayName}" used in this policy is not marked as trusted.`,
+        recommendation: "Review whether this location should be marked as trusted.",
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Check: Legacy Authentication ────────────────────────────────────────────
+
+function checkLegacyAuth(policy: ConditionalAccessPolicy): Finding[] {
+  const findings: Finding[] = [];
+  const clientAppTypes = policy.conditions.clientAppTypes;
+
+  if (
+    clientAppTypes.includes("exchangeActiveSync") ||
+    clientAppTypes.includes("other")
+  ) {
+    const grant = policy.grantControls;
+    const blocks = grant?.builtInControls.includes("block");
+
+    if (!blocks) {
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "high",
+        category: "Legacy Authentication",
+        title: "Legacy auth clients targeted but NOT blocked",
+        description:
+          "This policy targets legacy authentication clients (Exchange ActiveSync / Other) " +
+          "but does not block them. Legacy auth cannot support MFA.",
+        recommendation:
+          "Block legacy authentication. Legacy auth protocols cannot perform MFA and are a " +
+          "common attack vector for password spray and credential stuffing attacks.",
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Check: Known CA Bypass Apps ─────────────────────────────────────────────
+
+function checkCABypassApps(
+  policy: ConditionalAccessPolicy,
+  _context: TenantContext
+): Finding[] {
+  const findings: Finding[] = [];
+  const excluded = policy.conditions.applications.excludeApplications;
+
+  for (const appId of excluded) {
+    const bypassApp = CA_BYPASS_APPS.find(
+      (a) => a.appId.toLowerCase() === appId.toLowerCase()
+    );
+    if (bypassApp && bypassApp.caBypassCount > 0 && !isFociApp(appId)) {
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "high",
+        category: "Known CA Bypass App",
+        title: `Excluded "${bypassApp.displayName}" has ${bypassApp.caBypassCount} known CA bypass(es)`,
+        description: `${bypassApp.description}`,
+        recommendation:
+          "Avoid excluding apps with known CA bypass capabilities. These are commonly used in attack chains.",
+        relatedIds: [appId],
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─── Tenant-Wide Gap Analysis ────────────────────────────────────────────────
+
+function checkTenantWideGaps(context: TenantContext): Finding[] {
+  const findings: Finding[] = [];
+  const enabled = context.policies.filter((p) => p.state === "enabled");
+
+  // Check if any policy requires MFA for all users
+  const hasMfaForAll = enabled.some((p) => {
+    const users = p.conditions.users;
+    const grant = p.grantControls;
+    return (
+      users.includeUsers.includes("All") &&
+      (grant?.builtInControls.includes("mfa") ||
+        grant?.authenticationStrength != null)
+    );
+  });
+
+  if (!hasMfaForAll) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: "tenant-wide",
+      policyName: "Tenant-Wide Analysis",
+      severity: "critical",
+      category: "MFA Coverage",
+      title: "No policy requires MFA for All Users",
+      description:
+        "No enabled policy was found that requires MFA (or authentication strength) for All Users. " +
+        "This means there may be users who can authenticate without MFA.",
+      recommendation:
+        "Create a baseline policy requiring MFA for All Users and All Cloud Apps. " +
+        "This is the foundation of the Swiss cheese model — MFA is the bare minimum.",
+    });
+  }
+
+  // Check for legacy auth blocking
+  const blocksLegacy = enabled.some((p) => {
+    const types = p.conditions.clientAppTypes;
+    const grant = p.grantControls;
+    return (
+      (types.includes("exchangeActiveSync") || types.includes("other")) &&
+      grant?.builtInControls.includes("block")
+    );
+  });
+
+  if (!blocksLegacy) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: "tenant-wide",
+      policyName: "Tenant-Wide Analysis",
+      severity: "critical",
+      category: "Legacy Auth",
+      title: "No policy blocks legacy authentication",
+      description:
+        "No enabled policy was found that blocks legacy authentication protocols. " +
+        "Legacy auth cannot support MFA and is a top attack vector.",
+      recommendation:
+        "Create a policy that blocks Exchange ActiveSync and Other client types for All Users.",
+    });
+  }
+
+  // Check for break-glass protection
+  const hasBreakGlass = enabled.some((p) => {
+    return (
+      p.conditions.users.excludeUsers.length > 0 &&
+      p.conditions.users.includeUsers.includes("All")
+    );
+  });
+
+  if (!hasBreakGlass) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: "tenant-wide",
+      policyName: "Tenant-Wide Analysis",
+      severity: "info",
+      category: "Break-Glass",
+      title: "No break-glass account exclusion detected",
+      description:
+        "No policies with All Users targeting have user exclusions that could be break-glass accounts. " +
+        "While exclusions should be minimized, at least 2 break-glass accounts should be excluded from MFA policies.",
+      recommendation:
+        "Ensure you have 2 break-glass accounts excluded from ALL CA policies. " +
+        "These should have complex passwords and be monitored for use.",
+    });
+  }
+
+  return findings;
+}
+
+// ─── Visualization Builder ───────────────────────────────────────────────────
+
+function buildVisualization(
+  policy: ConditionalAccessPolicy,
+  context: TenantContext
+): PolicyVisualization {
+  const { users, applications, locations, platforms } = policy.conditions;
+
+  // Users summary
+  let targetUsers = "None";
+  if (users.includeUsers.includes("All")) {
+    const excCount = users.excludeUsers.length + users.excludeGroups.length + users.excludeRoles.length;
+    targetUsers = excCount > 0 ? `All users (${excCount} exclusions)` : "All users";
+  } else if (users.includeUsers.includes("GuestsOrExternalUsers")) {
+    targetUsers = "Guests / External users";
+  } else {
+    const count = users.includeUsers.length + users.includeGroups.length + users.includeRoles.length;
+    targetUsers = `${count} specific user/group/role targets`;
+  }
+
+  // Apps summary
+  let targetApps = "None";
+  if (applications.includeApplications.includes("All")) {
+    const excCount = applications.excludeApplications.length;
+    targetApps = excCount > 0 ? `All cloud apps (${excCount} exclusions)` : "All cloud apps";
+  } else if (applications.includeUserActions.length > 0) {
+    targetApps = `User actions: ${applications.includeUserActions.join(", ")}`;
+  } else {
+    const appNames = applications.includeApplications.map((id) => {
+      const known = WELL_KNOWN_APP_MAP.get(id.toLowerCase());
+      return known?.displayName ?? id;
+    });
+    targetApps = appNames.join(", ");
+  }
+
+  // Conditions
+  const conditions: string[] = [];
+  if (locations && locations.includeLocations.length > 0) {
+    conditions.push(`Locations: ${locations.includeLocations.length} included`);
+  }
+  if (platforms && platforms.includePlatforms.length > 0) {
+    conditions.push(`Platforms: ${platforms.includePlatforms.join(", ")}`);
+  }
+  if (policy.conditions.userRiskLevels.length > 0) {
+    conditions.push(`User risk: ${policy.conditions.userRiskLevels.join(", ")}`);
+  }
+  if (policy.conditions.signInRiskLevels.length > 0) {
+    conditions.push(`Sign-in risk: ${policy.conditions.signInRiskLevels.join(", ")}`);
+  }
+  if (policy.conditions.clientAppTypes.length > 0) {
+    conditions.push(`Client apps: ${policy.conditions.clientAppTypes.join(", ")}`);
+  }
+  if (policy.conditions.devices?.deviceFilter) {
+    conditions.push(`Device filter: ${policy.conditions.devices.deviceFilter.rule}`);
+  }
+
+  // Grant controls
+  const grantControls: string[] = [];
+  if (policy.grantControls) {
+    const g = policy.grantControls;
+    if (g.builtInControls.includes("block")) {
+      grantControls.push("🚫 Block access");
+    } else {
+      const controls = g.builtInControls.map((c) => {
+        switch (c) {
+          case "mfa": return "✅ Require MFA";
+          case "compliantDevice": return "📱 Require compliant device";
+          case "domainJoinedDevice": return "💻 Require hybrid Azure AD joined";
+          case "approvedApplication": return "✅ Require approved app";
+          case "compliantApplication": return "✅ Require app protection policy";
+          case "passwordChange": return "🔑 Require password change";
+          default: return c;
+        }
+      });
+      if (g.authenticationStrength) {
+        controls.push(`🛡️ Auth strength: ${g.authenticationStrength.displayName}`);
+      }
+      grantControls.push(`${controls.join(` ${g.operator} `)}`);
+    }
+  }
+
+  // Session controls
+  const sessionControls: string[] = [];
+  if (policy.sessionControls) {
+    const s = policy.sessionControls;
+    if (s.signInFrequency?.isEnabled) {
+      sessionControls.push(`Sign-in frequency: ${s.signInFrequency.value} ${s.signInFrequency.type}`);
+    }
+    if (s.persistentBrowser?.isEnabled) {
+      sessionControls.push(`Persistent browser: ${s.persistentBrowser.mode}`);
+    }
+    if (s.cloudAppSecurity?.isEnabled) {
+      sessionControls.push("Cloud App Security");
+    }
+    if (s.continuousAccessEvaluation) {
+      sessionControls.push(`CAE: ${s.continuousAccessEvaluation.mode}`);
+    }
+    if (s.disableResilienceDefaults) {
+      sessionControls.push("⚠️ Resilience defaults disabled");
+    }
+  }
+
+  const stateMap: Record<string, string> = {
+    enabled: "✅ Enabled",
+    disabled: "⛔ Disabled",
+    enabledForReportingButNotEnforced: "📊 Report-only",
+  };
+
+  return {
+    targetUsers,
+    targetApps,
+    conditions,
+    grantControls,
+    sessionControls,
+    state: stateMap[policy.state] ?? policy.state,
+  };
+}
+
+// ─── Scoring ─────────────────────────────────────────────────────────────────
+
+function buildSummary(context: TenantContext, findings: Finding[]): TenantSummary {
+  return {
+    totalPolicies: context.policies.length,
+    enabledPolicies: context.policies.filter((p) => p.state === "enabled").length,
+    reportOnlyPolicies: context.policies.filter(
+      (p) => p.state === "enabledForReportingButNotEnforced"
+    ).length,
+    disabledPolicies: context.policies.filter((p) => p.state === "disabled").length,
+    totalFindings: findings.length,
+    criticalFindings: findings.filter((f) => f.severity === "critical").length,
+    highFindings: findings.filter((f) => f.severity === "high").length,
+    mediumFindings: findings.filter((f) => f.severity === "medium").length,
+    lowFindings: findings.filter((f) => f.severity === "low").length,
+    infoFindings: findings.filter((f) => f.severity === "info").length,
+  };
+}
+
+function calculateScore(summary: TenantSummary): number {
+  let score = 100;
+  score -= summary.criticalFindings * 15;
+  score -= summary.highFindings * 8;
+  score -= summary.mediumFindings * 4;
+  score -= summary.lowFindings * 1;
+  return Math.max(0, Math.min(100, score));
+}
