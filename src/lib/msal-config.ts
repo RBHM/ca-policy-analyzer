@@ -5,7 +5,7 @@
  * Conditional Access policies from any Entra ID tenant.
  */
 
-import { Configuration, LogLevel, PopupRequest } from "@azure/msal-browser";
+import { Configuration, LogLevel, RedirectRequest } from "@azure/msal-browser";
 
 // The client ID for a multi-tenant SPA (register in Entra ID → App registrations)
 // Users MUST set this via environment variable or .env.local
@@ -59,7 +59,7 @@ export const graphScopes = {
   directoryRead: "Directory.Read.All",
 };
 
-export const loginRequest: PopupRequest = {
+export const loginRequest: RedirectRequest = {
   scopes: [
     graphScopes.policyRead,
     graphScopes.applicationRead,

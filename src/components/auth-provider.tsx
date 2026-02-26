@@ -24,9 +24,19 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     const init = async () => {
       await msalInstance.initialize();
 
+      // Handle redirect response (comes back after loginRedirect)
+      try {
+        const response = await msalInstance.handleRedirectPromise();
+        if (response?.account) {
+          msalInstance.setActiveAccount(response.account);
+        }
+      } catch (e) {
+        console.error("Redirect error:", e);
+      }
+
       // Set active account from cache
       const accounts = msalInstance.getAllAccounts();
-      if (accounts.length > 0) {
+      if (accounts.length > 0 && !msalInstance.getActiveAccount()) {
         msalInstance.setActiveAccount(accounts[0]);
       }
 

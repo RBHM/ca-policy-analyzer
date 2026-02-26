@@ -9,16 +9,14 @@ export default function Header() {
   const { instance, accounts } = useMsal();
   const isAuthenticated = useIsAuthenticated();
 
-  const handleLogin = async () => {
-    try {
-      await instance.loginPopup(loginRequest);
-    } catch (e) {
+  const handleLogin = () => {
+    instance.loginRedirect(loginRequest).catch((e) => {
       console.error("Login failed:", e);
-    }
+    });
   };
 
   const handleLogout = () => {
-    instance.logoutPopup({ postLogoutRedirectUri: "/" });
+    instance.logoutRedirect({ postLogoutRedirectUri: "/" });
   };
 
   const account = accounts[0];
