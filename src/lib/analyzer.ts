@@ -14,6 +14,8 @@ import {
   ServicePrincipal,
   TenantContext,
 } from "./graph-client";
+import { CISAlignmentResult } from "@/data/cis-benchmarks";
+import { TemplateAnalysisResult } from "./template-matcher";
 import { isFociApp, getFociApp, getFociFamily } from "@/data/foci-families";
 import {
   CA_IMMUNE_RESOURCE_MAP,
@@ -69,6 +71,24 @@ export interface PolicyResult {
   policy: ConditionalAccessPolicy;
   findings: Finding[];
   visualization: PolicyVisualization;
+}
+
+// ─── Composite Score ─────────────────────────────────────────────────────────
+
+export interface CompositeScoreResult {
+  /** Overall 0-100 score */
+  overall: number;
+  /** CIS alignment component */
+  cisScore: number;
+  cisMax: number;
+  /** Template coverage component */
+  templateScore: number;
+  templateMax: number;
+  /** Configuration quality component (finding deductions) */
+  configScore: number;
+  configMax: number;
+  /** Human-readable letter grade */
+  grade: string;
 }
 
 // ─── Visualization Model ─────────────────────────────────────────────────────
@@ -843,4 +863,88 @@ function calculateScore(summary: TenantSummary): number {
   score -= summary.mediumFindings * 4;
   score -= summary.lowFindings * 1;
   return Math.max(0, Math.min(100, score));
+}
+
+// ─── Composite Scoring ──────────────────────────────────────────────────────
+//
+// Three-pillar model:
+//   CIS Alignment    (50 pts) — weighted pass rate of CIS L1/L2 controls
+//   Template Coverage (25 pts) — weighted best-practice template coverage
+//   Config Quality    (25 pts) — finding-severity deductions with per-tier caps
+//
+// This ensures tenants that pass CIS checks and have matching policies always
+// get credit, instead of the old model that only subtracted from 100.
+
+export function calculateCompositeScore(
+  analysis: AnalysisResult,
+  cisResult: CISAlignmentResult,
+  templateResult: TemplateAnalysisResult,
+): CompositeScoreResult {
+  // ── CIS Alignment (50 points max) ──
+  // L1 (essential) controls carry 3× weight
+  // L2 (defense-in-depth) controls carry 1× weight
+  const CIS_MAX = 50;
+  let cisWeightTotal = 0;
+  let cisWeightEarned = 0;
+
+  for (const cr of cisResult.controls) {
+    const weight = cr.control.level === "L1" ? 3 : 1;
+    if (cr.result.status === "not-applicable") continue;
+    cisWeightTotal += weight;
+    if (cr.result.status === "pass") {
+      cisWeightEarned += weight;
+    } else if (cr.result.status === "manual") {
+      cisWeightEarned += weight * 0.5;
+    }
+  }
+
+  const cisScore =
+    cisWeightTotal > 0
+      ? Math.round((cisWeightEarned / cisWeightTotal) * CIS_MAX)
+      : 0;
+
+  // ── Template Coverage (25 points max) ──
+  // Uses the pre-computed priority-weighted coverage score
+  const TEMPLATE_MAX = 25;
+  const templateScore = Math.round((templateResult.coverageScore / 100) * TEMPLATE_MAX);
+
+  // ── Configuration Quality (25 points max) ──
+  // Deductions per severity, each capped to prevent a single tier
+  // from consuming the entire budget
+  const CONFIG_MAX = 25;
+  const s = analysis.tenantSummary;
+
+  const critPenalty = Math.min(s.criticalFindings * 5, 15);
+  const highPenalty = Math.min(s.highFindings * 1.5, 10);
+  const medPenalty = Math.min(s.mediumFindings * 0.5, 8);
+  const lowPenalty = Math.min(s.lowFindings * 0.25, 3);
+  const totalPenalty = Math.min(
+    critPenalty + highPenalty + medPenalty + lowPenalty,
+    CONFIG_MAX,
+  );
+  const configScore = Math.round(CONFIG_MAX - totalPenalty);
+
+  const overall = Math.max(0, Math.min(100, cisScore + templateScore + configScore));
+
+  const grade =
+    overall >= 90
+      ? "A"
+      : overall >= 80
+        ? "B"
+        : overall >= 65
+          ? "C"
+          : overall >= 50
+            ? "D"
+            : "F";
+
+  return {
+    overall,
+    cisScore,
+    cisMax: CIS_MAX,
+    templateScore,
+    templateMax: TEMPLATE_MAX,
+    configScore,
+    configMax: CONFIG_MAX,
+    grade,
+  };
 }

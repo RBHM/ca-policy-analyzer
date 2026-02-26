@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useIsAuthenticated, useMsal } from "@azure/msal-react";
 import { loadTenantContext, TenantContext } from "@/lib/graph-client";
-import { analyzeAllPolicies, AnalysisResult } from "@/lib/analyzer";
+import { analyzeAllPolicies, AnalysisResult, calculateCompositeScore, CompositeScoreResult } from "@/lib/analyzer";
 import { analyzeTemplates, TemplateAnalysisResult } from "@/lib/template-matcher";
 import { runCISAlignment, CISAlignmentResult } from "@/data/cis-benchmarks";
 import { Dashboard } from "@/components/dashboard";
@@ -27,6 +27,7 @@ export default function Home() {
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [templateResult, setTemplateResult] = useState<TemplateAnalysisResult | null>(null);
   const [cisResult, setCisResult] = useState<CISAlignmentResult | null>(null);
+  const [compositeScore, setCompositeScore] = useState<CompositeScoreResult | null>(null);
   const [activeTab, setActiveTab] = useState<ViewTab>("dashboard");
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +52,10 @@ export default function Home() {
       const cis = runCISAlignment(ctx);
       setCisResult(cis);
 
+      setProgress("Computing security posture score…");
+      const composite = calculateCompositeScore(analysisResult, cis, templates);
+      setCompositeScore(composite);
+
       setActiveTab("dashboard");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Unknown error occurred";
@@ -64,7 +69,8 @@ export default function Home() {
 
   const exportResults = useCallback(() => {
     if (!result) return;
-    const blob = new Blob([JSON.stringify(result, null, 2)], {
+    const exportData = { ...result, compositeScore: compositeScore ?? undefined };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -73,7 +79,7 @@ export default function Home() {
     a.download = `ca-analysis-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [result]);
+  }, [result, compositeScore]);
 
   // ── Not Authenticated ─────────────────────────────────────────────────
   if (!isAuthenticated) {
@@ -202,7 +208,7 @@ export default function Home() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === "dashboard" && <Dashboard result={result} />}
+      {activeTab === "dashboard" && <Dashboard result={result} compositeScore={compositeScore} />}
       {activeTab === "policies" && (
         <PolicyList results={result.policyResults} />
       )}
