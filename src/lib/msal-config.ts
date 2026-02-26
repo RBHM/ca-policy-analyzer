@@ -8,10 +8,15 @@
 import { Configuration, LogLevel, RedirectRequest } from "@azure/msal-browser";
 
 // The client ID for a multi-tenant SPA (register in Entra ID → App registrations)
-// Users MUST set this via environment variable or .env.local
-const CLIENT_ID = process.env.NEXT_PUBLIC_MSAL_CLIENT_ID ?? "";
+// Override via NEXT_PUBLIC_MSAL_CLIENT_ID env var if you fork this project
+const CLIENT_ID =
+  process.env.NEXT_PUBLIC_MSAL_CLIENT_ID || "b8fe9cbf-f32d-4af7-87ae-0781bc0126c7";
+
+// Auto-detect redirect URI at runtime so it works on both localhost and GitHub Pages
 const REDIRECT_URI =
-  process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI ?? "http://localhost:3000";
+  typeof window !== "undefined"
+    ? window.location.origin + (window.location.pathname.replace(/\/+$/, "") || "")
+    : process.env.NEXT_PUBLIC_MSAL_REDIRECT_URI ?? "http://localhost:3000";
 
 export const msalConfig: Configuration = {
   auth: {
