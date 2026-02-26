@@ -46,7 +46,7 @@ All detected issues ranked Critical → Info. Expand any finding to see the full
 
 ### Templates — Gap Analysis
 
-23 best-practice templates compared against your tenant. Each template shows whether you have a matching policy, a partial match, or a gap.
+28 best-practice templates compared against your tenant. Each template shows whether you have a matching policy, a partial match, or a gap.
 
 <!-- Replace with actual screenshot: open the app → Templates tab -->
 ![Templates](docs/screenshots/templates.png)
@@ -79,7 +79,7 @@ CA Policy Analyzer connects to your Entra ID tenant via Microsoft Graph and:
 4. **Flags known CA bypasses** including CA-immune resources, Device Registration Service bypass, resource exclusion scope leaks, and more
 5. **Generates a Security Posture Score** (0-100) with severity-ranked findings and actionable recommendations
 6. **Visualizes each policy** showing the flow: Users → Conditions → Apps → Grant Controls
-7. **Suggests missing policy templates** from [Jhope188/ConditionalAccessPolicies](https://github.com/Jhope188/ConditionalAccessPolicies) — 23 best-practice templates matched against your existing policies
+7. **Suggests missing policy templates** from [Jhope188/ConditionalAccessPolicies](https://github.com/Jhope188/ConditionalAccessPolicies) — 28 best-practice templates matched against your existing policies
 8. **Measures CIS v6.0 alignment** — 18 controls from CIS Microsoft 365 Foundations Benchmark v6.0.0 with pass/fail scoring
 9. **Flags MS Learn documented exclusions** — 12 checks for missing exclusions that Microsoft documents as required (Surface Hub, Teams Rooms, break-glass accounts, token protection prerequisites, etc.)
 10. **Exports full analysis as JSON** — download your results for offline review or integration with other tools
@@ -93,7 +93,7 @@ The app has six tabs accessible after running an analysis:
 | **Dashboard** | Security posture score (0–100), severity breakdown, risk category distribution, and at-a-glance stats |
 | **Policies** | Every CA policy visualized as a flow card: Users → Conditions → Apps → Grant/Session Controls |
 | **Findings** | All detected issues ranked by severity (Critical → Info) with affected policies and remediation guidance |
-| **Templates** | 23 best-practice policy templates compared against your tenant — shows matched, partial, and missing policies |
+| **Templates** | 28 best-practice policy templates compared against your tenant — shows matched, partial, and missing policies |
 | **CIS** | CIS Microsoft 365 Foundations Benchmark v6.0.0 alignment — 18 controls across sections 5.3 (Conditional Access) and 5.4 (Identity Protection & Device Controls) |
 | **MS Learn** | Documented exclusion checks sourced from Microsoft Learn — flags policies missing required exclusions for token protection, Surface Hub, Teams Rooms, break-glass, CAE, and more |
 

@@ -265,6 +265,15 @@ function scorePolicyMatch(
     }
   }
 
+  if (fingerprint.sessionCloudAppSecurity) {
+    totalWeight += 15;
+    if (session?.cloudAppSecurity?.isEnabled) {
+      matchedWeight += 15;
+    } else {
+      differences.push("Session: template requires Conditional Access App Control (block downloads), not configured");
+    }
+  }
+
   // ── Authentication flows (weight: 15) ──────────────────────────────
   if (
     fingerprint.authenticationFlows &&

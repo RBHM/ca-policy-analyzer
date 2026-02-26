@@ -65,6 +65,7 @@ export interface TemplateFingerprint {
   /** Session control signatures */
   sessionSignInFrequency?: boolean;
   sessionPersistentBrowser?: boolean;
+  sessionCloudAppSecurity?: boolean;
   /** Platform conditions */
   platforms?: { include: string[]; exclude: string[] };
   /** Authentication flow conditions */
@@ -128,6 +129,10 @@ export interface DeploymentPolicy {
     };
     applicationEnforcedRestrictions?: {
       isEnabled: boolean;
+    };
+    cloudAppSecurity?: {
+      isEnabled: boolean;
+      cloudAppSecurityType: string;
     };
     secureSignInSession?: {
       isEnabled: boolean;
@@ -835,20 +840,69 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     displayName: "INTUNE - GRANT - Mobile Device Access Requirements",
     category: "intune",
     controlType: "GRANT",
-    priority: "optional",
+    priority: "recommended",
     summary:
-      "Require compliant device or approved/compliant app for mobile access",
+      "Require compliant device or app protection policy for mobile access to Office 365",
     rationale:
-      "For mobile devices, requiring either compliance OR an approved app protection policy enables BYOD scenarios while maintaining data protection.",
+      "For mobile devices, requiring either device compliance OR an app protection policy enables BYOD scenarios while maintaining data protection on iOS and Android.",
     fingerprint: {
-      includeApps: ["All"],
+      includeApps: ["Office365"],
       grantControls: ["compliantDevice", "compliantApplication"],
       grantOperator: "OR",
       targetsAllUsers: true,
+      clientAppTypes: ["mobileAppsAndDesktopClients"],
+      platforms: { include: ["android", "iOS"], exclude: [] },
     },
     deploymentJson: {
       displayName:
         "YOURORG - INTUNE - GRANT - Mobile Device Access Requirements",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["Office365"],
+          excludeApplications: ["0000000a-0000-0000-c000-000000000000"],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["mobileAppsAndDesktopClients"],
+        platforms: {
+          includePlatforms: ["android", "iOS"],
+          excludePlatforms: [],
+        },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["compliantDevice", "compliantApplication"],
+      },
+    },
+  },
+
+  {
+    id: "intune-block-compliant-nontrusted",
+    displayName: "INTUNE - BLOCK - RequireCompliantDevice - NonTrustedLocations",
+    category: "intune",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary:
+      "Block non-compliant/non-hybrid-joined devices from non-trusted locations",
+    rationale:
+      "Devices that are not compliant or Hybrid Azure AD joined should be blocked when connecting from outside trusted corporate locations to reduce lateral movement risk.",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+    },
+    deploymentJson: {
+      displayName:
+        "YOURORG - INTUNE - BLOCK - RequireCompliantDevice - NonTrustedLocations",
       state: "disabled",
       conditions: {
         users: {
@@ -868,7 +922,195 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       },
       grantControls: {
         operator: "OR",
-        builtInControls: ["compliantDevice", "compliantApplication"],
+        builtInControls: ["block"],
+      },
+    },
+  },
+
+  {
+    id: "intune-grant-require-compliant",
+    displayName: "INTUNE - GRANT - RequireCompliantDevice",
+    category: "intune",
+    controlType: "GRANT",
+    priority: "critical",
+    summary:
+      "Require compliant device or Hybrid Azure AD joined device for all apps",
+    rationale:
+      "Requiring device compliance or Hybrid Azure AD join ensures that only managed, healthy devices can access corporate resources. This is a cornerstone Intune policy.",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["compliantDevice", "domainJoinedDevice"],
+      grantOperator: "OR",
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+      usesLocationCondition: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - INTUNE - GRANT - RequireCompliantDevice",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        locations: {
+          includeLocations: ["AllTrusted"],
+          excludeLocations: ["AllTrusted"],
+        },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["compliantDevice", "domainJoinedDevice"],
+      },
+    },
+  },
+
+  {
+    id: "intune-grant-device-registration",
+    displayName: "INTUNE - GRANT - Device Registration from Trusted Location",
+    category: "intune",
+    controlType: "GRANT",
+    priority: "recommended",
+    summary:
+      "Require MFA for device registration, restrict to trusted locations",
+    rationale:
+      "Limiting device registration to trusted network locations and requiring MFA prevents rogue device enrollment from untrusted networks or by threat actors with stolen credentials.",
+    fingerprint: {
+      includeApps: [],
+      includeUserActions: ["urn:user:registerdevice"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+    },
+    deploymentJson: {
+      displayName:
+        "YOURORG - INTUNE - GRANT - Device Registration from Trusted Location",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [],
+          excludeApplications: [],
+          includeUserActions: ["urn:user:registerdevice"],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: [],
+      },
+    },
+  },
+
+  {
+    id: "intune-session-block-downloads",
+    displayName: "INTUNE - SESSION - Block File Downloads On Unmanaged Devices",
+    category: "intune",
+    controlType: "SESSION",
+    priority: "recommended",
+    summary:
+      "Block file downloads from Office 365 on unmanaged (non-compliant) devices",
+    rationale:
+      "Preventing file downloads on unmanaged devices limits data exfiltration risk while still allowing browser-based viewing of corporate data for BYOD users.",
+    fingerprint: {
+      includeApps: ["Office365"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+      sessionCloudAppSecurity: true,
+    },
+    deploymentJson: {
+      displayName:
+        "YOURORG - INTUNE - SESSION - Block File Downloads On Unmanaged Devices",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["Office365"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      sessionControls: {
+        cloudAppSecurity: {
+          isEnabled: true,
+          cloudAppSecurityType: "blockDownloads",
+        },
+      },
+    },
+  },
+
+  {
+    id: "intune-session-byod-persistence",
+    displayName: "INTUNE - SESSION - BYOD Persistence",
+    category: "intune",
+    controlType: "SESSION",
+    priority: "optional",
+    summary:
+      "Enforce sign-in frequency and disable persistent browser for BYOD / non-compliant devices",
+    rationale:
+      "BYOD devices are higher risk — disabling persistent browser sessions and enforcing re-authentication every 9 hours limits the window of exposure if a session token is compromised.",
+    fingerprint: {
+      includeApps: ["All"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+      sessionSignInFrequency: true,
+      sessionPersistentBrowser: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - INTUNE - SESSION - BYOD Persistence",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      sessionControls: {
+        signInFrequency: {
+          isEnabled: true,
+          value: 9,
+          type: "hours",
+          frequencyInterval: "timeBased",
+          authenticationType: "primaryAndSecondaryAuthentication",
+        },
+        persistentBrowser: {
+          isEnabled: true,
+          mode: "never",
+        },
       },
     },
   },
