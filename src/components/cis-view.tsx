@@ -200,7 +200,7 @@ export function CISView({ result }: CISViewProps) {
           <ScoreRing score={result.alignmentScore} />
           <p className="mt-3 text-sm text-gray-400">CIS Alignment Score</p>
           <p className="text-xs text-gray-600">
-            CIS Microsoft 365 Foundations Benchmark v4.0
+            CIS Microsoft 365 Foundations Benchmark v{result.benchmarkVersion ?? "6.0.0"}
           </p>
         </Card>
 

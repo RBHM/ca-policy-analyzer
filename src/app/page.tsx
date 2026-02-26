@@ -11,10 +11,11 @@ import { PolicyList } from "@/components/policy-list";
 import { FindingsList } from "@/components/findings-list";
 import { TemplatesView } from "@/components/templates-view";
 import { CISView } from "@/components/cis-view";
+import { ExclusionsView } from "@/components/exclusions-view";
 import { Shield, Loader2, Play, Download, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type ViewTab = "dashboard" | "policies" | "findings" | "templates" | "cis";
+type ViewTab = "dashboard" | "policies" | "findings" | "templates" | "cis" | "ms-learn";
 
 export default function Home() {
   const isAuthenticated = useIsAuthenticated();
@@ -163,6 +164,7 @@ export default function Home() {
               { key: "findings", label: "All Findings" },
               { key: "templates", label: "Templates" },
               { key: "cis", label: "CIS Alignment" },
+              { key: "ms-learn", label: "MS Learn" },
             ] as const
           ).map((tab) => (
             <button
@@ -212,6 +214,9 @@ export default function Home() {
       )}
       {activeTab === "cis" && cisResult && (
         <CISView result={cisResult} />
+      )}
+      {activeTab === "ms-learn" && result && (
+        <ExclusionsView findings={result.exclusionFindings} />
       )}
     </div>
   );

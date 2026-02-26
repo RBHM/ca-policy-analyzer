@@ -22,6 +22,10 @@ import {
   WELL_KNOWN_APP_MAP,
   CA_BYPASS_APPS,
 } from "@/data/ca-bypass-database";
+import {
+  checkPolicyExclusions,
+  ExclusionFinding,
+} from "@/data/known-exclusions";
 
 // ─── Finding Types ───────────────────────────────────────────────────────────
 
@@ -44,6 +48,7 @@ export interface AnalysisResult {
   tenantSummary: TenantSummary;
   policyResults: PolicyResult[];
   findings: Finding[];
+  exclusionFindings: ExclusionFinding[];
   overallScore: number; // 0-100
 }
 
@@ -121,10 +126,32 @@ export function analyzeAllPolicies(context: TenantContext): AnalysisResult {
   // Tenant-wide checks
   findings.push(...checkTenantWideGaps(context));
 
+  // MS Learn documented exclusion checks
+  const exclusionFindings: ExclusionFinding[] = context.policies.flatMap((p) =>
+    checkPolicyExclusions(p)
+  );
+
+  // Convert critical/high exclusion findings into the main findings list too
+  for (const ef of exclusionFindings) {
+    if (ef.exclusion.severity === "critical" || ef.exclusion.severity === "high") {
+      findings.push({
+        id: nextFindingId(),
+        policyId: ef.policyId,
+        policyName: ef.policyName,
+        severity: ef.exclusion.severity,
+        category: "MS Learn: Documented Exclusion",
+        title: ef.exclusion.title,
+        description: ef.result.detail,
+        recommendation: ef.exclusion.remediation,
+        relatedIds: ef.result.impactedResources,
+      });
+    }
+  }
+
   const summary = buildSummary(context, findings);
   const overallScore = calculateScore(summary);
 
-  return { tenantSummary: summary, policyResults, findings, overallScore };
+  return { tenantSummary: summary, policyResults, findings, exclusionFindings, overallScore };
 }
 
 // ─── Check: FOCI Family Exclusions ───────────────────────────────────────────
