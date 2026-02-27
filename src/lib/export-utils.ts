@@ -13,6 +13,7 @@ import {
   CompositeScoreResult,
 } from "./analyzer";
 import { CISAlignmentResult } from "@/data/cis-benchmarks";
+import { resolveRoleList } from "@/lib/role-names";
 
 // ─── Export Options ──────────────────────────────────────────────────────────
 
@@ -152,8 +153,8 @@ export function exportToExcel(
     "Exclude Users": joinOrNone(r.policy.conditions.users.excludeUsers),
     "Include Groups": joinOrNone(r.policy.conditions.users.includeGroups),
     "Exclude Groups": joinOrNone(r.policy.conditions.users.excludeGroups),
-    "Include Roles": joinOrNone(r.policy.conditions.users.includeRoles),
-    "Exclude Roles": joinOrNone(r.policy.conditions.users.excludeRoles),
+    "Include Roles": resolveRoleList(r.policy.conditions.users.includeRoles),
+    "Exclude Roles": resolveRoleList(r.policy.conditions.users.excludeRoles),
     "Include Apps": joinOrNone(r.policy.conditions.applications.includeApplications),
     "Exclude Apps": joinOrNone(r.policy.conditions.applications.excludeApplications),
     "Client App Types": joinOrNone(r.policy.conditions.clientAppTypes),
@@ -626,7 +627,7 @@ function addPolicySlide(pptx: PptxGenJS, pr: PolicyResult) {
     ["Exclude Users", joinOrNone(policy.conditions.users.excludeUsers)],
     ["Include Groups", joinOrNone(policy.conditions.users.includeGroups)],
     ["Exclude Groups", joinOrNone(policy.conditions.users.excludeGroups)],
-    ["Include Roles", joinOrNone(policy.conditions.users.includeRoles)],
+    ["Include Roles", resolveRoleList(policy.conditions.users.includeRoles)],
     ["Client App Types", joinOrNone(policy.conditions.clientAppTypes)],
     ["Platforms", joinOrNone(policy.conditions.platforms?.includePlatforms)],
     ["User Risk", joinOrNone(policy.conditions.userRiskLevels)],

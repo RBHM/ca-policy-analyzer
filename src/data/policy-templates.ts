@@ -1553,9 +1553,9 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   // ZTCA (Zero Trust Conditional Access) POLICIES
   // ═══════════════════════════════════════════════════════════════════════
   {
-    id: "ztca-block-register-security-exclude-trusted",
-    displayName: "ZTCA - BLOCK - RegisterSecurityInfo - ExcludeTrustedLocation",
-    category: "ztca",
+    id: "baseline-block-register-security-exclude-trusted",
+    displayName: "GLOBAL - BLOCK - RegisterSecurityInfoRequirements - ExcludeTrustedLocation",
+    category: "baseline",
     controlType: "BLOCK",
     priority: "optional",
     summary: "Block security info registration except from trusted locations",
@@ -1570,7 +1570,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     },
     deploymentJson: {
       displayName:
-        "YOURORG - ZTCA - BLOCK - RegisterSecurityInfo - ExcludeTrustedLocation",
+        "YOURORG - GLOBAL - BLOCK - RegisterSecurityInfoRequirements - ExcludeTrustedLocation",
       state: "disabled",
       conditions: {
         users: {

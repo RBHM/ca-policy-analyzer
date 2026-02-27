@@ -14,19 +14,7 @@ import {
   TemplatePriority,
   ADMIN_ROLE_IDS,
 } from "@/data/policy-templates";
-
-// ─── Role Name Lookup ────────────────────────────────────────────────────────
-
-/** Reverse map: role GUID (lowercase) → human-friendly name */
-const ROLE_NAME_MAP: Record<string, string> = Object.fromEntries(
-  Object.entries(ADMIN_ROLE_IDS).map(([key, id]) => [
-    id.toLowerCase(),
-    key
-      .replace(/([A-Z])/g, " $1")
-      .replace(/^./, (c) => c.toUpperCase())
-      .trim(),
-  ])
-);
+import { ROLE_NAME_MAP } from "@/lib/role-names";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

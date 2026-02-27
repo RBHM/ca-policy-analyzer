@@ -3,6 +3,7 @@
 import { PolicyResult, Finding, ExcludedAppDetail } from "@/lib/analyzer";
 import { SeverityBadge, Card } from "./ui-primitives";
 import { cn } from "@/lib/utils";
+import { resolveRoleList } from "@/lib/role-names";
 import {
   Users,
   Cloud,
@@ -341,6 +342,57 @@ function PolicyCard({ result }: { result: PolicyResult }) {
               emptyText="No session controls"
             />
           </div>
+
+          {/* Condition Details — roles resolved to friendly names */}
+          {(() => {
+            const u = policy.conditions.users;
+            const rows: [string, string][] = [];
+            if (u.includeUsers.length > 0 && !u.includeUsers.includes("All") && !u.includeUsers.includes("None") && !u.includeUsers.includes("GuestsOrExternalUsers"))
+              rows.push(["Include Users", u.includeUsers.join(", ")]);
+            if (u.excludeUsers.length > 0)
+              rows.push(["Exclude Users", u.excludeUsers.join(", ")]);
+            if (u.includeGroups.length > 0)
+              rows.push(["Include Groups", u.includeGroups.join(", ")]);
+            if (u.excludeGroups.length > 0)
+              rows.push(["Exclude Groups", u.excludeGroups.join(", ")]);
+            if (u.includeRoles.length > 0)
+              rows.push(["Include Roles", resolveRoleList(u.includeRoles)]);
+            if (u.excludeRoles.length > 0)
+              rows.push(["Exclude Roles", resolveRoleList(u.excludeRoles)]);
+            if (policy.conditions.clientAppTypes.length > 0)
+              rows.push(["Client App Types", policy.conditions.clientAppTypes.join(", ")]);
+            if (policy.conditions.platforms?.includePlatforms.length)
+              rows.push(["Platforms", policy.conditions.platforms.includePlatforms.join(", ")]);
+            if (policy.conditions.userRiskLevels.length > 0)
+              rows.push(["User Risk", policy.conditions.userRiskLevels.join(", ")]);
+            if (policy.conditions.signInRiskLevels.length > 0)
+              rows.push(["Sign-in Risk", policy.conditions.signInRiskLevels.join(", ")]);
+
+            if (rows.length === 0) return null;
+            return (
+              <div className="mt-4">
+                <h4 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">
+                  Condition Details
+                </h4>
+                <div className="rounded-lg border border-gray-800 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {rows.map(([label, value]) => (
+                        <tr key={label} className="border-b border-gray-800 last:border-0">
+                          <td className="px-3 py-1.5 text-gray-500 font-medium whitespace-nowrap w-36 bg-gray-900/50">
+                            {label}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-300 break-all">
+                            {value}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })()}
 
 {/* Policy Findings — grouped by severity with dropdowns */}
             {findings.length > 0 && (
