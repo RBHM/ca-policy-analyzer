@@ -3,7 +3,7 @@
 import { PolicyResult, Finding, ExcludedAppDetail } from "@/lib/analyzer";
 import { SeverityBadge, Card } from "./ui-primitives";
 import { cn } from "@/lib/utils";
-import { resolveRoleList } from "@/lib/role-names";
+import { resolveRoleList, resolveGuidList, type GuidResolverMaps } from "@/lib/role-names";
 import {
   Users,
   Cloud,
@@ -229,7 +229,7 @@ function FindingsGrouped({ findings }: { findings: Finding[] }) {
   );
 }
 
-function PolicyCard({ result }: { result: PolicyResult }) {
+function PolicyCard({ result, resolverMaps }: { result: PolicyResult; resolverMaps?: GuidResolverMaps }) {
   const [expanded, setExpanded] = useState(false);
   const { policy, visualization, findings } = result;
 
@@ -348,17 +348,17 @@ function PolicyCard({ result }: { result: PolicyResult }) {
             const u = policy.conditions.users;
             const rows: [string, string][] = [];
             if (u.includeUsers.length > 0 && !u.includeUsers.includes("All") && !u.includeUsers.includes("None") && !u.includeUsers.includes("GuestsOrExternalUsers"))
-              rows.push(["Include Users", u.includeUsers.join(", ")]);
+              rows.push(["Include Users", resolveGuidList(u.includeUsers, resolverMaps)]);
             if (u.excludeUsers.length > 0)
-              rows.push(["Exclude Users", u.excludeUsers.join(", ")]);
+              rows.push(["Exclude Users", resolveGuidList(u.excludeUsers, resolverMaps)]);
             if (u.includeGroups.length > 0)
-              rows.push(["Include Groups", u.includeGroups.join(", ")]);
+              rows.push(["Include Groups", resolveGuidList(u.includeGroups, resolverMaps)]);
             if (u.excludeGroups.length > 0)
-              rows.push(["Exclude Groups", u.excludeGroups.join(", ")]);
+              rows.push(["Exclude Groups", resolveGuidList(u.excludeGroups, resolverMaps)]);
             if (u.includeRoles.length > 0)
-              rows.push(["Include Roles", resolveRoleList(u.includeRoles)]);
+              rows.push(["Include Roles", resolveRoleList(u.includeRoles, resolverMaps)]);
             if (u.excludeRoles.length > 0)
-              rows.push(["Exclude Roles", resolveRoleList(u.excludeRoles)]);
+              rows.push(["Exclude Roles", resolveRoleList(u.excludeRoles, resolverMaps)]);
             if (policy.conditions.clientAppTypes.length > 0)
               rows.push(["Client App Types", policy.conditions.clientAppTypes.join(", ")]);
             if (policy.conditions.platforms?.includePlatforms.length)
@@ -428,10 +428,12 @@ export function PolicyList({
   results,
   hideMicrosoft,
   onToggleHideMicrosoft,
+  resolverMaps,
 }: {
   results: PolicyResult[];
   hideMicrosoft: boolean;
   onToggleHideMicrosoft: (val: boolean) => void;
+  resolverMaps?: GuidResolverMaps;
 }) {
   const [sortBy, setSortBy] = useState<"findings" | "name" | "state">("findings");
   const [search, setSearch] = useState("");
@@ -537,7 +539,7 @@ export function PolicyList({
 
       <div className="space-y-2">
         {sorted.map((result) => (
-          <PolicyCard key={result.policy.id} result={result} />
+          <PolicyCard key={result.policy.id} result={result} resolverMaps={resolverMaps} />
         ))}
         {sorted.length === 0 && (
           <p className="py-8 text-center text-sm text-gray-500">

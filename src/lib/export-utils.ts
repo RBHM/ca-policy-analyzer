@@ -13,7 +13,7 @@ import {
   CompositeScoreResult,
 } from "./analyzer";
 import { CISAlignmentResult } from "@/data/cis-benchmarks";
-import { resolveRoleList } from "@/lib/role-names";
+import { resolveRoleList, resolveGuidList, resolveAppList, type GuidResolverMaps } from "@/lib/role-names";
 
 // ─── Export Options ──────────────────────────────────────────────────────────
 
@@ -26,6 +26,8 @@ export interface ExportOptions {
   tenantDisplayName?: string;
   /** Entra ID tenant ID */
   tenantId?: string;
+  /** Dynamic lookup maps for resolving GUIDs to display names */
+  resolverMaps?: GuidResolverMaps;
 }
 
 /** Detect Microsoft-managed / built-in policies */
@@ -147,6 +149,7 @@ export function exportToExcel(
   XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
 
   // ── Sheet 2: All Policies ───────────────────────────────────────────
+  const maps = options?.resolverMaps;
   const policyRows = policyResults.map((r) => ({
     "Policy Name": r.policy.displayName,
     State: stateLabel(r.policy.state),
@@ -155,14 +158,14 @@ export function exportToExcel(
     Conditions: joinOrNone(r.visualization.conditions),
     "Grant Controls": joinOrNone(r.visualization.grantControls),
     "Session Controls": joinOrNone(r.visualization.sessionControls),
-    "Include Users": joinOrNone(r.policy.conditions.users.includeUsers),
-    "Exclude Users": joinOrNone(r.policy.conditions.users.excludeUsers),
-    "Include Groups": joinOrNone(r.policy.conditions.users.includeGroups),
-    "Exclude Groups": joinOrNone(r.policy.conditions.users.excludeGroups),
-    "Include Roles": resolveRoleList(r.policy.conditions.users.includeRoles),
-    "Exclude Roles": resolveRoleList(r.policy.conditions.users.excludeRoles),
-    "Include Apps": joinOrNone(r.policy.conditions.applications.includeApplications),
-    "Exclude Apps": joinOrNone(r.policy.conditions.applications.excludeApplications),
+    "Include Users": resolveGuidList(r.policy.conditions.users.includeUsers, maps),
+    "Exclude Users": resolveGuidList(r.policy.conditions.users.excludeUsers, maps),
+    "Include Groups": resolveGuidList(r.policy.conditions.users.includeGroups, maps),
+    "Exclude Groups": resolveGuidList(r.policy.conditions.users.excludeGroups, maps),
+    "Include Roles": resolveRoleList(r.policy.conditions.users.includeRoles, maps),
+    "Exclude Roles": resolveRoleList(r.policy.conditions.users.excludeRoles, maps),
+    "Include Apps": resolveAppList(r.policy.conditions.applications.includeApplications, maps),
+    "Exclude Apps": resolveAppList(r.policy.conditions.applications.excludeApplications, maps),
     "Client App Types": joinOrNone(r.policy.conditions.clientAppTypes),
     Platforms: joinOrNone(r.policy.conditions.platforms?.includePlatforms),
     "User Risk Levels": joinOrNone(r.policy.conditions.userRiskLevels),
@@ -528,7 +531,7 @@ export async function exportToPowerPoint(
 
   // ── Slide 3+: Policy Detail Slides (one per policy) ────────────────
   for (const pr of policyResults) {
-    addPolicySlide(pptx, pr);
+    addPolicySlide(pptx, pr, options?.resolverMaps);
   }
 
   // ── Slide N: CIS Alignment ──────────────────────────────────────────
@@ -540,7 +543,7 @@ export async function exportToPowerPoint(
   await pptx.writeFile({ fileName: `ca-analysis-${datestamp()}.pptx` });
 }
 
-function addPolicySlide(pptx: PptxGenJS, pr: PolicyResult) {
+function addPolicySlide(pptx: PptxGenJS, pr: PolicyResult, maps?: GuidResolverMaps) {
   const slide = pptx.addSlide();
   slide.background = { color: COLORS.bg };
 
@@ -647,11 +650,14 @@ function addPolicySlide(pptx: PptxGenJS, pr: PolicyResult) {
 
   // Detailed conditions table
   const details = [
-    ["Include Users", joinOrNone(policy.conditions.users.includeUsers)],
-    ["Exclude Users", joinOrNone(policy.conditions.users.excludeUsers)],
-    ["Include Groups", joinOrNone(policy.conditions.users.includeGroups)],
-    ["Exclude Groups", joinOrNone(policy.conditions.users.excludeGroups)],
-    ["Include Roles", resolveRoleList(policy.conditions.users.includeRoles)],
+    ["Include Users", resolveGuidList(policy.conditions.users.includeUsers, maps)],
+    ["Exclude Users", resolveGuidList(policy.conditions.users.excludeUsers, maps)],
+    ["Include Groups", resolveGuidList(policy.conditions.users.includeGroups, maps)],
+    ["Exclude Groups", resolveGuidList(policy.conditions.users.excludeGroups, maps)],
+    ["Include Roles", resolveRoleList(policy.conditions.users.includeRoles, maps)],
+    ["Exclude Roles", resolveRoleList(policy.conditions.users.excludeRoles, maps)],
+    ["Include Apps", resolveAppList(policy.conditions.applications.includeApplications, maps)],
+    ["Exclude Apps", resolveAppList(policy.conditions.applications.excludeApplications, maps)],
     ["Client App Types", joinOrNone(policy.conditions.clientAppTypes)],
     ["Platforms", joinOrNone(policy.conditions.platforms?.includePlatforms)],
     ["User Risk", joinOrNone(policy.conditions.userRiskLevels)],

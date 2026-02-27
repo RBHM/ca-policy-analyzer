@@ -246,7 +246,7 @@ export default function Home() {
             <span className="hidden sm:inline">JSON</span>
           </button>
           <button
-            onClick={() => result && exportToExcel(result, cisResult, compositeScore, { hideMicrosoftPolicies: hideMicrosoft, tenantDisplayName: tenantName, tenantId })}
+            onClick={() => result && exportToExcel(result, cisResult, compositeScore, { hideMicrosoftPolicies: hideMicrosoft, tenantDisplayName: tenantName, tenantId, resolverMaps: context ? { directoryObjects: context.directoryObjects, servicePrincipals: context.servicePrincipals } : undefined })}
             title="Export Excel"
             className="flex items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors sm:px-3"
           >
@@ -267,6 +267,7 @@ export default function Home() {
                 logoBase64: logo,
                 tenantDisplayName: tenantName,
                 tenantId,
+                resolverMaps: context ? { directoryObjects: context.directoryObjects, servicePrincipals: context.servicePrincipals } : undefined,
               });
             }}
             title="Export PowerPoint"
@@ -281,7 +282,7 @@ export default function Home() {
       {/* Tab Content */}
       {activeTab === "dashboard" && <Dashboard result={result} compositeScore={compositeScore} licenses={context?.licenses} />}
       {activeTab === "policies" && (
-        <PolicyList results={result.policyResults} hideMicrosoft={hideMicrosoft} onToggleHideMicrosoft={setHideMicrosoft} />
+        <PolicyList results={result.policyResults} hideMicrosoft={hideMicrosoft} onToggleHideMicrosoft={setHideMicrosoft} resolverMaps={context ? { directoryObjects: context.directoryObjects, servicePrincipals: context.servicePrincipals } : undefined} />
       )}
       {activeTab === "findings" && (
         <FindingsList findings={result.findings} title="All Findings" />

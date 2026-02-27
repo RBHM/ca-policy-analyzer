@@ -750,8 +750,12 @@ function buildVisualization(
     targetApps = `User actions: ${applications.includeUserActions.join(", ")}`;
   } else {
     const appNames = applications.includeApplications.map((id) => {
-      const known = WELL_KNOWN_APP_MAP.get(id.toLowerCase());
-      return known?.displayName ?? id;
+      const lower = id.toLowerCase();
+      const known = WELL_KNOWN_APP_MAP.get(lower);
+      if (known?.displayName) return known.displayName;
+      const sp = context.servicePrincipals.get(lower);
+      if (sp?.displayName) return sp.displayName;
+      return id;
     });
     targetApps = appNames.join(", ");
   }
