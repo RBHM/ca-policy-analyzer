@@ -135,6 +135,10 @@ const SERVICE_PLAN_IDS: Record<string, string> = {
 };
 
 export interface TenantContext {
+  /** Entra ID tenant display name (from /organization) */
+  tenantDisplayName: string;
+  /** Entra ID tenant ID */
+  tenantId: string;
   policies: ConditionalAccessPolicy[];
   namedLocations: NamedLocation[];
   servicePrincipals: Map<string, ServicePrincipal>;
@@ -464,5 +468,21 @@ export async function loadTenantContext(
     licenses = inferLicensesFromPolicies(policies);
   }
 
-  return { policies, namedLocations, servicePrincipals, directoryObjects, licenses };
+  // Fetch tenant identity (display name + tenant ID)
+  onProgress?.("Loading tenant identity…");
+  let tenantDisplayName = account.tenantId ?? "Unknown Tenant";
+  const tenantId = account.tenantId ?? "";
+  try {
+    const orgResponse = await client.api("/organization").select("displayName").top(1).get();
+    const orgs = orgResponse?.value;
+    if (Array.isArray(orgs) && orgs.length > 0 && orgs[0].displayName) {
+      tenantDisplayName = orgs[0].displayName;
+    }
+  } catch {
+    // Fall back to account username domain or tenant ID
+    const domain = account.username?.split("@")[1];
+    if (domain) tenantDisplayName = domain;
+  }
+
+  return { tenantDisplayName, tenantId, policies, namedLocations, servicePrincipals, directoryObjects, licenses };
 }

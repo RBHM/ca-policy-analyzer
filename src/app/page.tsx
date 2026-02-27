@@ -179,8 +179,26 @@ export default function Home() {
   ];
 
   // ── Results View ──────────────────────────────────────────────────────
+  const tenantName = context?.tenantDisplayName ?? accounts[0]?.username?.split("@")[1] ?? "Unknown";
+  const tenantId = context?.tenantId ?? accounts[0]?.tenantId ?? "";
+
   return (
     <div className="space-y-6">
+      {/* Tenant Identity Banner */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900 px-5 py-4">
+        <p className="text-sm text-gray-400">
+          CA Policy Analysis for
+        </p>
+        <h2 className="text-xl font-bold text-white mt-0.5">
+          {tenantName}
+        </h2>
+        {tenantId && (
+          <p className="text-xs text-gray-600 font-mono mt-1">
+            Tenant ID: {tenantId}
+          </p>
+        )}
+      </div>
+
       {/* Tab Bar + Actions */}
       <div className="flex items-center justify-between gap-2">
         {/* Scrollable tab strip — icons only on mobile, icons + labels on sm+ */}
@@ -228,7 +246,7 @@ export default function Home() {
             <span className="hidden sm:inline">JSON</span>
           </button>
           <button
-            onClick={() => result && exportToExcel(result, cisResult, compositeScore, { hideMicrosoftPolicies: hideMicrosoft })}
+            onClick={() => result && exportToExcel(result, cisResult, compositeScore, { hideMicrosoftPolicies: hideMicrosoft, tenantDisplayName: tenantName, tenantId })}
             title="Export Excel"
             className="flex items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors sm:px-3"
           >
@@ -247,6 +265,8 @@ export default function Home() {
               await exportToPowerPoint(result, cisResult, compositeScore, {
                 hideMicrosoftPolicies: hideMicrosoft,
                 logoBase64: logo,
+                tenantDisplayName: tenantName,
+                tenantId,
               });
             }}
             title="Export PowerPoint"

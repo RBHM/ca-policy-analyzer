@@ -22,6 +22,10 @@ export interface ExportOptions {
   hideMicrosoftPolicies?: boolean;
   /** Base64-encoded logo image (data URI or raw base64) for the PPTX cover slide */
   logoBase64?: string | null;
+  /** Tenant display name (company / org name) */
+  tenantDisplayName?: string;
+  /** Entra ID tenant ID */
+  tenantId?: string;
 }
 
 /** Detect Microsoft-managed / built-in policies */
@@ -107,6 +111,8 @@ export function exportToExcel(
   const s = analysis.tenantSummary;
   const summaryData = [
     ["CA Policy Analyzer — Export", ""],
+    ["Tenant", options?.tenantDisplayName ?? "—"],
+    ["Tenant ID", options?.tenantId ?? "—"],
     ["Generated", new Date().toLocaleString()],
     [""],
     ["Policy Summary", ""],
@@ -306,6 +312,24 @@ export async function exportToPowerPoint(
     bold: true,
     lineSpacingMultiple: 1.2,
   });
+
+  // Tenant identity
+  const tenantLine = options?.tenantDisplayName
+    ? `${options.tenantDisplayName}${options.tenantId ? `  •  ${options.tenantId}` : ""}`
+    : options?.tenantId ?? "";
+  if (tenantLine) {
+    titleSlide.addText(tenantLine, {
+      x: 0.8,
+      y: 3.8,
+      w: 11,
+      h: 0.4,
+      fontSize: 14,
+      fontFace: "Arial",
+      color: COLORS.accent,
+      bold: true,
+    });
+  }
+
   titleSlide.addText(`Generated ${new Date().toLocaleDateString()}`, {
     x: 0.8,
     y: 4.2,
