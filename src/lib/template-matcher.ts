@@ -12,7 +12,21 @@ import {
   POLICY_TEMPLATES,
   TemplateCategory,
   TemplatePriority,
+  ADMIN_ROLE_IDS,
 } from "@/data/policy-templates";
+
+// ─── Role Name Lookup ────────────────────────────────────────────────────────
+
+/** Reverse map: role GUID (lowercase) → human-friendly name */
+const ROLE_NAME_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(ADMIN_ROLE_IDS).map(([key, id]) => [
+    id.toLowerCase(),
+    key
+      .replace(/([A-Z])/g, " $1")
+      .replace(/^./, (c) => c.toUpperCase())
+      .trim(),
+  ])
+);
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,11 +41,14 @@ export interface TemplateMatch {
   matchingPolicies: MatchedPolicy[];
   /** Differences between the template and the best match */
   differences: string[];
+  /** Actionable gaps explaining how to reach 100 % */
+  gaps: string[];
 }
 
 export interface MatchedPolicy {
   policy: ConditionalAccessPolicy;
   similarity: number; // 0-100
+  differences: string[]; // per-policy gaps
 }
 
 export interface TemplateAnalysisResult {
@@ -138,13 +155,25 @@ function scorePolicyMatch(
       fingerprint.targetRoles.map((r) => r.toLowerCase())
     );
     const overlap = [...templateRoles].filter((r) => policyRoles.has(r));
+    const missing = [...templateRoles].filter((r) => !policyRoles.has(r));
     const ratio = overlap.length / templateRoles.size;
 
     if (ratio >= 0.5) {
       matchedWeight += Math.round(15 * ratio);
+      if (missing.length > 0) {
+        const missingNames = missing.map(
+          (id) => ROLE_NAME_MAP[id] ?? id
+        );
+        differences.push(
+          `Roles: missing ${missing.length} of ${templateRoles.size} admin roles — ${missingNames.join(", ")}`
+        );
+      }
     } else {
+      const missingNames = missing.map(
+        (id) => ROLE_NAME_MAP[id] ?? id
+      );
       differences.push(
-        `Roles: template targets ${templateRoles.size} admin roles, policy includes ${policyRoles.size}`
+        `Roles: policy only includes ${policyRoles.size} of ${templateRoles.size} required admin roles — missing ${missingNames.join(", ")}`
       );
     }
   }
@@ -328,31 +357,100 @@ export function analyzeTemplates(
     // Sort by similarity descending
     scored.sort((a, b) => b.similarity - a.similarity);
 
-    const bestMatch = scored[0];
     const topMatches = scored
       .filter((s) => s.similarity >= 40)
       .slice(0, 3);
 
-    // Determine status
+    // Separate active vs disabled/report-only best matches
+    const bestActiveMatch = scored.find((s) =>
+      activePolicies.some((p) => p.id === s.policy.id)
+    );
+    const bestAnyMatch = scored[0];
+
+    // Determine status — prioritize active matches
     let status: MatchStatus = "missing";
     let confidence = 0;
+    const gaps: string[] = [];
 
-    if (bestMatch && bestMatch.similarity >= 70) {
-      // Check if the matching policy is active
-      const isActive = activePolicies.some(
-        (p) => p.id === bestMatch.policy.id
-      );
-      if (isActive) {
-        status = bestMatch.similarity >= 85 ? "present" : "partial";
-        confidence = bestMatch.similarity;
+    if (bestActiveMatch && bestActiveMatch.similarity >= 70) {
+      // Good active match exists
+      if (bestActiveMatch.similarity >= 85) {
+        status = "present";
       } else {
-        // Policy exists but disabled
         status = "partial";
-        confidence = Math.round(bestMatch.similarity * 0.7);
       }
-    } else if (bestMatch && bestMatch.similarity >= 40) {
+      confidence = bestActiveMatch.similarity;
+
+      // Check if it's report-only
+      if (
+        bestActiveMatch.policy.state ===
+        "enabledForReportingButNotEnforced"
+      ) {
+        gaps.push(
+          `Policy "${bestActiveMatch.policy.displayName}" is in report-only mode — switch to "On" to enforce`
+        );
+      }
+    } else if (bestAnyMatch && bestAnyMatch.similarity >= 70) {
+      // Good structural match but only in disabled/report-only policies
       status = "partial";
-      confidence = bestMatch.similarity;
+      confidence = bestAnyMatch.similarity;
+
+      if (bestAnyMatch.policy.state === "disabled") {
+        gaps.push(
+          `Policy "${bestAnyMatch.policy.displayName}" matches at ${bestAnyMatch.similarity}% but is disabled — enable it to satisfy this template`
+        );
+      } else if (
+        bestAnyMatch.policy.state === "enabledForReportingButNotEnforced"
+      ) {
+        gaps.push(
+          `Policy "${bestAnyMatch.policy.displayName}" matches at ${bestAnyMatch.similarity}% but is report-only — switch to "On" to enforce`
+        );
+      }
+    } else if (bestAnyMatch && bestAnyMatch.similarity >= 40) {
+      status = "partial";
+      confidence = bestAnyMatch.similarity;
+    }
+
+    // Generate actionable gaps from the best match's differences
+    const bestDiffs =
+      (bestActiveMatch && bestActiveMatch.similarity >= 40
+        ? bestActiveMatch
+        : bestAnyMatch
+      )?.differences ?? [];
+
+    for (const diff of bestDiffs) {
+      if (diff.startsWith("Roles: missing")) {
+        gaps.push(`Add the missing admin roles to your policy: ${diff.replace("Roles: missing ", "").split(" — ")[1] ?? diff}`);
+      } else if (diff.startsWith("Roles: policy only")) {
+        gaps.push(`Add the required admin roles: ${diff.split(" — missing ")[1] ?? diff}`);
+      } else if (diff.startsWith("Users: template targets All Users")) {
+        gaps.push("Change user targeting to 'All Users' instead of specific groups/roles");
+      } else if (diff.startsWith("Users: template targets guest")) {
+        gaps.push("Add guest/external user targeting to the policy conditions");
+      } else if (diff.startsWith("Grant controls:")) {
+        const needed = diff.match(/template requires \[(.+?)\]/)?.[1];
+        gaps.push(`Set grant controls to require: ${needed ?? "the template controls"}`);
+      } else if (diff.startsWith("Apps:")) {
+        gaps.push("Update application targeting to match the template scope");
+      } else if (diff.startsWith("Sign-in risk:")) {
+        const levels = diff.match(/requires \[(.+?)\]/)?.[1];
+        gaps.push(`Configure sign-in risk levels: ${levels ?? "as specified"}`);
+      } else if (diff.startsWith("User risk:")) {
+        const levels = diff.match(/requires \[(.+?)\]/)?.[1];
+        gaps.push(`Configure user risk levels: ${levels ?? "as specified"}`);
+      } else if (diff.startsWith("Locations:")) {
+        gaps.push("Add named location conditions to the policy");
+      } else if (diff.startsWith("Platforms:")) {
+        gaps.push("Configure platform targeting to match the template");
+      } else if (diff.startsWith("Session:")) {
+        gaps.push(diff.replace("Session: template requires ", "Enable ").replace(", not configured", ""));
+      } else if (diff.startsWith("Auth flows:")) {
+        gaps.push("Block authentication transfer flows in the policy conditions");
+      } else if (diff.startsWith("Client apps:")) {
+        gaps.push("Update client app type targeting to match the template");
+      } else if (diff.startsWith("User actions:")) {
+        gaps.push("Add the required user actions (e.g., register security info) to the policy");
+      }
     }
 
     return {
@@ -362,8 +460,10 @@ export function analyzeTemplates(
       matchingPolicies: topMatches.map((m) => ({
         policy: m.policy,
         similarity: m.similarity,
+        differences: m.differences,
       })),
-      differences: bestMatch?.differences ?? [],
+      differences: bestDiffs,
+      gaps,
     };
   });
 

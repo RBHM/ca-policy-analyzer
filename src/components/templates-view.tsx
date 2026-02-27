@@ -158,44 +158,68 @@ function TemplateCard({ match }: { match: TemplateMatch }) {
               <h5 className="text-xs font-medium text-gray-400 uppercase mb-1">
                 Matching Tenant Policies
               </h5>
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {match.matchingPolicies.map((mp) => (
                   <div
                     key={mp.policy.id}
-                    className="flex items-center justify-between rounded bg-gray-800 px-3 py-2 text-sm"
+                    className="rounded bg-gray-800 px-3 py-2"
                   >
-                    <span className="text-gray-300 truncate">
-                      {mp.policy.displayName}
-                    </span>
-                    <span
-                      className={cn(
-                        "text-xs font-mono",
-                        mp.similarity >= 85
-                          ? "text-emerald-400"
-                          : mp.similarity >= 60
-                            ? "text-amber-400"
-                            : "text-gray-500"
-                      )}
-                    >
-                      {mp.similarity}%
-                    </span>
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="text-gray-300 truncate">
+                          {mp.policy.displayName}
+                        </span>
+                        {mp.policy.state === "disabled" && (
+                          <span className="shrink-0 rounded bg-red-400/10 px-1.5 py-0.5 text-[10px] font-medium text-red-400">
+                            Disabled
+                          </span>
+                        )}
+                        {mp.policy.state === "enabledForReportingButNotEnforced" && (
+                          <span className="shrink-0 rounded bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">
+                            Report-only
+                          </span>
+                        )}
+                      </div>
+                      <span
+                        className={cn(
+                          "text-xs font-mono shrink-0 ml-2",
+                          mp.similarity >= 85
+                            ? "text-emerald-400"
+                            : mp.similarity >= 60
+                              ? "text-amber-400"
+                              : "text-gray-500"
+                        )}
+                      >
+                        {mp.similarity}%
+                      </span>
+                    </div>
+                    {mp.differences.length > 0 && (
+                      <ul className="mt-1.5 space-y-0.5">
+                        {mp.differences.map((d, i) => (
+                          <li key={i} className="flex gap-2 text-[11px] text-gray-500">
+                            <span className="text-amber-500 shrink-0">•</span>
+                            <span>{d}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Differences */}
-          {match.differences.length > 0 && (
+          {/* Actionable Gaps */}
+          {match.gaps.length > 0 && (
             <div>
               <h5 className="text-xs font-medium text-gray-400 uppercase mb-1">
-                Differences
+                🛠 How to reach 100%
               </h5>
-              <ul className="space-y-1 text-xs text-gray-400">
-                {match.differences.map((d, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-amber-400">•</span>
-                    {d}
+              <ul className="space-y-1.5">
+                {match.gaps.map((g, i) => (
+                  <li key={i} className="flex gap-2 text-xs text-blue-300/90">
+                    <span className="text-blue-400 shrink-0">→</span>
+                    <span>{g}</span>
                   </li>
                 ))}
               </ul>
