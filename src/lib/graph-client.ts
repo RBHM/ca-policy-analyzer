@@ -160,13 +160,16 @@ function createGraphClient(
 
 async function fetchAllPages<T>(
   client: Client,
-  url: string
+  url: string,
+  apiVersion?: string
 ): Promise<T[]> {
   const results: T[] = [];
   let nextLink: string | undefined = url;
 
   while (nextLink) {
-    const response = await client.api(nextLink).get();
+    let req = client.api(nextLink);
+    if (apiVersion) req = req.version(apiVersion);
+    const response = await req.get();
     results.push(...(response.value ?? []));
     nextLink = response["@odata.nextLink"];
   }
@@ -177,9 +180,12 @@ async function fetchAllPages<T>(
 export async function fetchConditionalAccessPolicies(
   client: Client
 ): Promise<ConditionalAccessPolicy[]> {
+  // Use the beta endpoint to ensure policies using preview features
+  // (time-based conditions, agents scope, etc.) are included
   return fetchAllPages<ConditionalAccessPolicy>(
     client,
-    "/identity/conditionalAccess/policies"
+    "/identity/conditionalAccess/policies",
+    "beta"
   );
 }
 
@@ -264,6 +270,65 @@ export async function resolveDirectoryObjects(
   return map;
 }
 
+// ─── Normalization ───────────────────────────────────────────────────────────
+
+/** Ensure all expected array fields exist — beta API may return null/undefined */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizePolicy(p: any): ConditionalAccessPolicy {
+  const raw = p as Partial<ConditionalAccessPolicy> & { id: string; displayName: string; state: string };
+  const users = (raw.conditions as Record<string, unknown>)?.users as Record<string, unknown> | undefined;
+  const apps = (raw.conditions as Record<string, unknown>)?.applications as Record<string, unknown> | undefined;
+  const cond = raw.conditions ?? {} as Record<string, unknown>;
+
+  return {
+    id: raw.id,
+    templateId: raw.templateId ?? null,
+    displayName: raw.displayName,
+    state: (raw.state as ConditionalAccessPolicy["state"]) ?? "disabled",
+    createdDateTime: raw.createdDateTime ?? "",
+    modifiedDateTime: raw.modifiedDateTime ?? "",
+    conditions: {
+      users: {
+        includeUsers: (users?.includeUsers as string[]) ?? [],
+        excludeUsers: (users?.excludeUsers as string[]) ?? [],
+        includeGroups: (users?.includeGroups as string[]) ?? [],
+        excludeGroups: (users?.excludeGroups as string[]) ?? [],
+        includeRoles: (users?.includeRoles as string[]) ?? [],
+        excludeRoles: (users?.excludeRoles as string[]) ?? [],
+        includeGuestsOrExternalUsers: users?.includeGuestsOrExternalUsers,
+        excludeGuestsOrExternalUsers: users?.excludeGuestsOrExternalUsers,
+      },
+      applications: {
+        includeApplications: (apps?.includeApplications as string[]) ?? [],
+        excludeApplications: (apps?.excludeApplications as string[]) ?? [],
+        includeUserActions: (apps?.includeUserActions as string[]) ?? [],
+        includeAuthenticationContextClassReferences:
+          (apps?.includeAuthenticationContextClassReferences as string[]) ?? [],
+        applicationFilter: apps?.applicationFilter as ConditionalAccessPolicy["conditions"]["applications"]["applicationFilter"],
+      },
+      clientAppTypes: ((cond as Record<string, unknown>).clientAppTypes as string[]) ?? [],
+      platforms: (cond as Record<string, unknown>).platforms as ConditionalAccessPolicy["conditions"]["platforms"],
+      locations: (cond as Record<string, unknown>).locations as ConditionalAccessPolicy["conditions"]["locations"],
+      userRiskLevels: ((cond as Record<string, unknown>).userRiskLevels as string[]) ?? [],
+      signInRiskLevels: ((cond as Record<string, unknown>).signInRiskLevels as string[]) ?? [],
+      servicePrincipalRiskLevels: (cond as Record<string, unknown>).servicePrincipalRiskLevels as string[] | undefined,
+      devices: (cond as Record<string, unknown>).devices as ConditionalAccessPolicy["conditions"]["devices"],
+      clientApplications: (cond as Record<string, unknown>).clientApplications as ConditionalAccessPolicy["conditions"]["clientApplications"],
+      insiderRiskLevels: (cond as Record<string, unknown>).insiderRiskLevels as string | undefined,
+    },
+    grantControls: raw.grantControls
+      ? {
+          operator: raw.grantControls.operator ?? "OR",
+          builtInControls: raw.grantControls.builtInControls ?? [],
+          customAuthenticationFactors: raw.grantControls.customAuthenticationFactors ?? [],
+          termsOfUse: raw.grantControls.termsOfUse ?? [],
+          authenticationStrength: raw.grantControls.authenticationStrength,
+        }
+      : undefined,
+    sessionControls: raw.sessionControls,
+  };
+}
+
 // ─── Main Loader ─────────────────────────────────────────────────────────────
 
 export async function loadTenantContext(
@@ -274,7 +339,9 @@ export async function loadTenantContext(
   const client = createGraphClient(msalInstance, account);
 
   onProgress?.("Loading Conditional Access policies…");
-  const policies = await fetchConditionalAccessPolicies(client);
+  const rawPolicies = await fetchConditionalAccessPolicies(client);
+  // Normalize: beta API may return null for fields we expect as arrays
+  const policies = rawPolicies.map(normalizePolicy);
 
   onProgress?.("Loading named locations…");
   const namedLocations = await fetchNamedLocations(client);
