@@ -761,10 +761,40 @@ export const CIS_CONTROLS: CISControl[] = [
 // ─── CIS Alignment Runner ────────────────────────────────────────────────────
 
 export function runCISAlignment(context: TenantContext): CISAlignmentResult {
-  const results: CISControlResult[] = CIS_CONTROLS.map((control) => ({
-    control,
-    result: control.check(context.policies, context),
-  }));
+  const results: CISControlResult[] = CIS_CONTROLS.map((control) => {
+    const result = control.check(context.policies, context);
+
+    // If check passed, verify at least one matching policy is truly enforced.
+    // Report-only policies don't actually enforce controls — downgrade to manual
+    // so the operator knows to flip the policy to "On".
+    if (result.status === "pass" && result.matchingPolicies.length > 0) {
+      const hasEnforcedMatch = result.matchingPolicies.some((name) =>
+        context.policies.some(
+          (p) => p.displayName === name && p.state === "enabled"
+        )
+      );
+
+      if (!hasEnforcedMatch) {
+        return {
+          control,
+          result: {
+            ...result,
+            status: "manual" as CISStatus,
+            detail:
+              result.detail.replace(/\.$/, "") +
+              " (report-only — not currently enforced).",
+            remediation:
+              "Matching policy(ies) are in report-only mode and not actively enforcing. " +
+              "Switch to enabled: " +
+              result.matchingPolicies.join(", ") +
+              ".",
+          },
+        };
+      }
+    }
+
+    return { control, result };
+  });
 
   const passCount = results.filter((r) => r.result.status === "pass").length;
   const failCount = results.filter((r) => r.result.status === "fail").length;
