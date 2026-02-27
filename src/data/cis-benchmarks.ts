@@ -733,9 +733,9 @@ export const CIS_CONTROLS: CISControl[] = [
       "Admin sessions should have a limited sign-in frequency (e.g., 4 hours or less) to reduce the window " +
       "of opportunity if an admin session token is compromised.",
     policyGuidance: {
-      suggestedName: "YOURORG - GLOBAL - SESSION - AdminPortal-SIF(4Hours)",
+      suggestedName: "YOURORG - APP - SESSION - AdminPortal-SIF(4Hours)",
       portalSteps: [
-        { tab: "Name", instructions: ["Enter policy name: YOURORG - GLOBAL - SESSION - AdminPortal-SIF(4Hours)"] },
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - APP - SESSION - AdminPortal-SIF(4Hours)"] },
         { tab: "Users", instructions: ["Include → Directory roles → select all privileged admin roles (Global Administrator, Security Administrator, Exchange Administrator, SharePoint Administrator, etc.)"] },
         { tab: "Target resources", instructions: ["Cloud apps → Include → Select apps → Microsoft Admin Portals (includes Azure portal, Microsoft 365 admin center, Exchange admin center, etc.)"] },
         { tab: "Session", instructions: ["Sign-in frequency → set to 4 hours", "Persistent browser session → optionally set to 'Never persistent'"] },
@@ -899,9 +899,9 @@ export const CIS_CONTROLS: CISControl[] = [
       "Token protection (token binding) should be configured for Exchange Online, SharePoint Online, and Teams " +
       "to prevent token replay attacks. Only supported on Windows 10+ with supported applications.",
     policyGuidance: {
-      suggestedName: "YOURORG - GLOBAL - SESSION - Windows - TokenProtection",
+      suggestedName: "YOURORG - APP - SESSION - Windows - TokenProtection",
       portalSteps: [
-        { tab: "Name", instructions: ["Enter policy name: YOURORG - GLOBAL - SESSION - Windows - TokenProtection"] },
+        { tab: "Name", instructions: ["Enter policy name: YOURORG - APP - SESSION - Windows - TokenProtection"] },
         { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass accounts, Surface Hub device accounts, Teams Rooms accounts"] },
         { tab: "Target resources", instructions: ["Cloud apps → Include → Select apps → Office 365 Exchange Online, Office 365 SharePoint Online, Microsoft Teams"] },
         { tab: "Conditions", instructions: ["Device platforms → Configure Yes → Include: Windows only", "Client apps → Browser, Mobile apps and desktop clients"] },
