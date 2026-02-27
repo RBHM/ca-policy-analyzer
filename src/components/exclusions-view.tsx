@@ -4,13 +4,17 @@
  * Displays documented Microsoft Learn exclusion findings —
  * policies that are missing required exclusions or have misconfigurations
  * per official MS documentation.
+ *
+ * Findings are GROUPED by check type so that duplicate findings
+ * (e.g. "Defender Mobile" flagged on 6 policies) appear as a single
+ * card with the affected policies listed underneath.
  */
 
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ExclusionFinding } from "@/data/known-exclusions";
-import type { ImpactSeverity } from "@/data/known-exclusions";
+import type { ImpactSeverity, DocumentedExclusion, ExclusionCheckResult } from "@/data/known-exclusions";
 import { Card, SeverityBadge } from "./ui-primitives";
 import {
   ExternalLink,
@@ -20,8 +24,48 @@ import {
   CheckCircle2,
   BookOpen,
   Filter,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// ─── Grouped finding type ────────────────────────────────────────────────────
+
+interface GroupedFinding {
+  exclusion: DocumentedExclusion;
+  policies: Array<{
+    policyId: string;
+    policyName: string;
+    result: ExclusionCheckResult;
+  }>;
+}
+
+function groupFindings(findings: ExclusionFinding[]): GroupedFinding[] {
+  const map = new Map<string, GroupedFinding>();
+  for (const f of findings) {
+    const existing = map.get(f.exclusion.id);
+    if (existing) {
+      existing.policies.push({
+        policyId: f.policyId,
+        policyName: f.policyName,
+        result: f.result,
+      });
+    } else {
+      map.set(f.exclusion.id, {
+        exclusion: f.exclusion,
+        policies: [
+          {
+            policyId: f.policyId,
+            policyName: f.policyName,
+            result: f.result,
+          },
+        ],
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 interface ExclusionsViewProps {
   findings: ExclusionFinding[];
@@ -35,14 +79,17 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
   >("all");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
+  // Group all findings by check type
+  const allGroups = useMemo(() => groupFindings(findings), [findings]);
+
   const filtered =
     severityFilter === "all"
-      ? findings
-      : findings.filter((f) => f.exclusion.severity === severityFilter);
+      ? allGroups
+      : allGroups.filter((g) => g.exclusion.severity === severityFilter);
 
   const grouped = SEVERITY_ORDER.map((sev) => ({
     severity: sev,
-    items: filtered.filter((f) => f.exclusion.severity === sev),
+    items: filtered.filter((g) => g.exclusion.severity === sev),
   })).filter((g) => g.items.length > 0);
 
   const toggle = (id: string) =>
@@ -52,12 +99,18 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
       return next;
     });
 
+  // Severity counts by unique check (not per-policy)
   const sevCounts = {
-    critical: findings.filter((f) => f.exclusion.severity === "critical").length,
-    high: findings.filter((f) => f.exclusion.severity === "high").length,
-    medium: findings.filter((f) => f.exclusion.severity === "medium").length,
-    info: findings.filter((f) => f.exclusion.severity === "info").length,
+    critical: allGroups.filter((g) => g.exclusion.severity === "critical").length,
+    high: allGroups.filter((g) => g.exclusion.severity === "high").length,
+    medium: allGroups.filter((g) => g.exclusion.severity === "medium").length,
+    info: allGroups.filter((g) => g.exclusion.severity === "info").length,
   };
+
+  const totalPoliciesAffected = allGroups.reduce(
+    (sum, g) => sum + g.policies.length,
+    0
+  );
 
   if (findings.length === 0) {
     return (
@@ -95,10 +148,18 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
 
           <div className="flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-amber-400" />
-            <span className="text-2xl font-bold text-white">
-              {findings.length}
-            </span>
-            <span className="text-sm text-gray-400">finding(s)</span>
+            <div className="text-right">
+              <span className="text-2xl font-bold text-white">
+                {allGroups.length}
+              </span>
+              <span className="text-sm text-gray-400 ml-1">
+                {allGroups.length === 1 ? "check" : "checks"}
+              </span>
+              <p className="text-xs text-gray-500">
+                across {totalPoliciesAffected}{" "}
+                {totalPoliciesAffected === 1 ? "policy" : "policies"}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -154,16 +215,32 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
         ))}
       </div>
 
-      {/* Findings list */}
-      {grouped.map((group) => (
-        <div key={group.severity} className="space-y-3">
+      {/* Grouped findings list */}
+      {grouped.map((section) => (
+        <div key={section.severity} className="space-y-3">
           <h4 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-            {group.severity} ({group.items.length})
+            {section.severity} ({section.items.length})
           </h4>
 
-          {group.items.map((finding, idx) => {
-            const uid = `${finding.exclusion.id}-${finding.policyId}-${idx}`;
+          {section.items.map((group) => {
+            const uid = group.exclusion.id;
             const isOpen = expandedIds.has(uid);
+            const policyCount = group.policies.length;
+
+            // Deduplicate impacted resources across all policies
+            const allResources = [
+              ...new Set(
+                group.policies.flatMap(
+                  (p) => p.result.impactedResources ?? []
+                )
+              ),
+            ];
+
+            // Check if all policy details are the same
+            const uniqueDetails = new Set(
+              group.policies.map((p) => p.result.detail)
+            );
+            const hasUniformDetail = uniqueDetails.size === 1;
 
             return (
               <Card key={uid}>
@@ -179,51 +256,83 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <SeverityBadge severity={finding.exclusion.severity} />
-                      <span className="text-sm font-semibold text-white truncate">
-                        {finding.exclusion.title}
+                      <SeverityBadge severity={group.exclusion.severity} />
+                      <span className="text-sm font-semibold text-white">
+                        {group.exclusion.title}
                       </span>
                     </div>
                     <p className="text-xs text-gray-500">
-                      Policy:{" "}
-                      <span className="text-gray-400">
-                        {finding.policyName}
-                      </span>
+                      {policyCount === 1 ? (
+                        <>
+                          Policy:{" "}
+                          <span className="text-gray-400">
+                            {group.policies[0].policyName}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-gray-400">
+                          {policyCount} policies affected
+                        </span>
+                      )}
                     </p>
                   </div>
                 </button>
 
                 {isOpen && (
                   <div className="mt-4 ml-7 space-y-4 border-t border-gray-800 pt-4">
-                    {/* What's wrong */}
+                    {/* Assessment — show once if uniform, per-policy otherwise */}
+                    {hasUniformDetail ? (
+                      <div>
+                        <h5 className="text-xs font-semibold text-gray-400 uppercase mb-1">
+                          Assessment
+                        </h5>
+                        <p className="text-sm text-gray-300">
+                          {group.policies[0].result.detail}
+                        </p>
+                      </div>
+                    ) : null}
+
+                    {/* Affected policies */}
                     <div>
                       <h5 className="text-xs font-semibold text-gray-400 uppercase mb-1">
-                        Assessment
+                        <Shield className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                        Affected {policyCount === 1 ? "Policy" : `Policies (${policyCount})`}
                       </h5>
-                      <p className="text-sm text-gray-300">
-                        {finding.result.detail}
-                      </p>
+                      <ul className="space-y-1.5">
+                        {group.policies.map((p, i) => (
+                          <li key={`${p.policyId}-${i}`}>
+                            <span className="text-sm font-medium text-gray-300">
+                              {p.policyName}
+                            </span>
+                            {/* Show per-policy detail only when details differ */}
+                            {!hasUniformDetail && (
+                              <p className="text-xs text-gray-500 mt-0.5 ml-4">
+                                {p.result.detail}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
 
                     {/* Impacted resources */}
-                    {finding.result.impactedResources &&
-                      finding.result.impactedResources.length > 0 && (
-                        <div>
-                          <h5 className="text-xs font-semibold text-red-400 uppercase mb-1">
-                            Impacted Resources
-                          </h5>
-                          <ul className="list-disc list-inside space-y-0.5">
-                            {finding.result.impactedResources.map((r, i) => (
-                              <li
-                                key={i}
-                                className="text-sm text-gray-400"
-                              >
-                                {r}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+                    {allResources.length > 0 && (
+                      <div>
+                        <h5 className="text-xs font-semibold text-red-400 uppercase mb-1">
+                          Impacted Resources
+                        </h5>
+                        <ul className="list-disc list-inside space-y-0.5">
+                          {allResources.map((r, i) => (
+                            <li
+                              key={i}
+                              className="text-sm text-gray-400"
+                            >
+                              {r}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
 
                     {/* Documented requirement */}
                     <div>
@@ -231,7 +340,7 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
                         MS Learn Requirement
                       </h5>
                       <p className="text-sm text-gray-300">
-                        {finding.exclusion.requirement}
+                        {group.exclusion.requirement}
                       </p>
                     </div>
 
@@ -241,13 +350,13 @@ export function ExclusionsView({ findings }: ExclusionsViewProps) {
                         Remediation
                       </h5>
                       <p className="text-sm text-gray-300">
-                        {finding.exclusion.remediation}
+                        {group.exclusion.remediation}
                       </p>
                     </div>
 
                     {/* Doc link */}
                     <a
-                      href={finding.exclusion.docUrl}
+                      href={group.exclusion.docUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 transition-colors"

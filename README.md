@@ -64,7 +64,7 @@ All detected issues ranked Critical → Info. Expand any finding to see the full
 
 ### MS Learn — Documented Exclusion Checks
 
-12 checks sourced from Microsoft Learn flag policies that are missing required exclusions. Findings are grouped by severity and each card links to the relevant documentation.
+14 checks sourced from Microsoft Learn flag policies that are missing required exclusions. Findings are grouped by check type — similar policies are consolidated under a single card showing all affected policies.
 
 <!-- Replace with actual screenshot: open the app → MS Learn tab -->
 ![MS Learn Exclusions](docs/screenshots/mslearn.png)
@@ -83,7 +83,7 @@ CA Policy Analyzer connects to your Entra ID tenant via Microsoft Graph and:
 6. **Visualizes each policy** showing the flow: Users → Conditions → Apps → Grant Controls
 7. **Suggests missing policy templates** from [Jhope188/ConditionalAccessPolicies](https://github.com/Jhope188/ConditionalAccessPolicies) — 37 best-practice templates matched against your existing policies
 8. **Measures CIS v6.0 alignment** — 18 controls from CIS Microsoft 365 Foundations Benchmark v6.0.0 with pass/fail scoring
-9. **Flags MS Learn documented exclusions** — 12 checks for missing exclusions that Microsoft documents as required (Surface Hub, Teams Rooms, break-glass accounts, token protection prerequisites, etc.)
+9. **Flags MS Learn documented exclusions** — 14 checks for missing exclusions that Microsoft documents as required (Surface Hub, Teams Rooms, break-glass accounts, token protection prerequisites, Azure VM sign-in, etc.)
 10. **Exports full analysis as JSON** — download your results for offline review or integration with other tools
 11. **License-aware scoring** — detects your tenant's Entra ID P1, P2, and Intune Plan 1 licenses via the `/subscribedSkus` endpoint and adjusts scoring accordingly. Templates and CIS controls that require licenses you don't have are marked N/A and excluded from gap/pass-fail calculations, so your score reflects only what is achievable with your current licensing.
 
@@ -144,22 +144,24 @@ Click the **Export JSON** button (visible when results are loaded) to download t
 
 ## MS Learn Documented Exclusion Checks
 
-12 checks sourced from Microsoft Learn documentation:
+14 checks sourced from Microsoft Learn documentation:
 
 | Check | Severity | What It Flags |
 |---|---|---|
-| Token Protection — Apps | Critical | Targeting "All apps" instead of only Exchange/SPO/Teams/AVD/W365 |
+| Token Protection — Apps | High | Targeting "All apps" instead of only Exchange/SPO/Teams/AVD/W365 |
 | Token Protection — Platform | High | Not restricting to Windows-only + desktop clients |
 | Token Protection — Devices | High | Missing Surface Hub, Teams Rooms, Cloud PC device exclusions |
 | Break-glass accounts | Critical | All Users enforcement policies with no user exclusions |
-| Surface Hub — MFA | High | MFA/compliance policies without Surface Hub exclusion |
-| Teams Rooms — MFA | High | MFA/auth strength policies without Teams Rooms exclusion |
+| Surface Hub — MFA | Medium | MFA/compliance policies without Surface Hub exclusion |
+| Teams Rooms — MFA | Medium | MFA/auth strength policies without Teams Rooms exclusion |
 | Teams Rooms — Sign-in frequency | Medium | Sign-in frequency causing periodic sign-outs |
 | Device code flow — Teams Android | Medium | Blocking device code breaks Teams Android remote sign-in |
 | Defender Mobile | Medium | Restrictive policies without Defender ATP exclusion |
-| Sign-in frequency — Individual services | Medium | Targeting individual M365 services breaks Teams |
+| Azure VM Sign-In — MFA | Medium | MFA/compliance policies without Azure VM Sign-In app exclusion |
 | CAE disabled | High | Policies explicitly disabling continuous access evaluation |
+| Sign-in frequency — Individual services | Medium | Targeting individual M365 services breaks Teams |
 | Resilience disabled | Medium | Policies disabling resilience defaults |
+| All Resources scope change | High | Low-privilege scope exemption ending March 2026 |
 
 ## Examples
 
@@ -360,7 +362,7 @@ src/
 │                   #   templates view, CIS view, exclusions view, UI primitives
 ├── data/           # FOCI database (45 apps), CA bypass database (13 apps),
 │                   #   CIS v6.0 benchmarks (18 controls), policy templates (37),
-│                   #   MS Learn documented exclusions (12 checks)
+│                   #   MS Learn documented exclusions (14 checks)
 └── lib/            # MSAL config, Graph client, analyzer engine (13 checks),
                     #   template matcher
 ```

@@ -602,6 +602,60 @@ export const DOCUMENTED_EXCLUSIONS: DocumentedExclusion[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════
+  // AZURE VM SIGN-IN
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    id: "azure-vm-signin-mfa",
+    title:
+      "Azure VM Sign-In: MFA via RDP requires special client support",
+    appliesWhen:
+      "Policy requires MFA or device compliance for all users and all cloud apps",
+    requirement:
+      "The Microsoft Azure Windows Virtual Machine Sign-In app (" +
+      WINDOWS_CLOUD_LOGIN +
+      ") requires the RDP client to supply the MFA claim. " +
+      "Not all RDP clients or environments support interactive MFA. Windows Server devices cannot " +
+      "satisfy device compliance rules when used as RDP clients. If Windows Hello for Business is " +
+      "not deployed, Microsoft recommends excluding the Azure VM Sign-In app from MFA policies.",
+    detect: (policy) => {
+      if (!isActivePolicy(policy)) return null;
+      if (!targetsAllUsers(policy) || !targetsAllApps(policy)) return null;
+      if (!hasMfaGrant(policy) && !hasDeviceComplianceGrant(policy))
+        return null;
+
+      const excludedApps =
+        policy.conditions.applications.excludeApplications.map((a) =>
+          a.toLowerCase()
+        );
+      if (excludedApps.includes(WINDOWS_CLOUD_LOGIN.toLowerCase()))
+        return null;
+
+      return {
+        detail:
+          "Policy requires MFA or device compliance for all users and all cloud apps but does not exclude " +
+          "the Microsoft Azure Windows Virtual Machine Sign-In app. Users connecting via RDP to Azure VMs " +
+          "or Arc-enabled Windows Servers must supply MFA claims from the initiating device. " +
+          "If Windows Hello for Business is not deployed, users may be unable to complete MFA during " +
+          "RDP sessions. Windows Server devices cannot satisfy device compliance requirements as RDP clients.",
+        impactedResources: [
+          `Microsoft Azure Windows Virtual Machine Sign-In (${WINDOWS_CLOUD_LOGIN})`,
+          "RDP connections to Azure VMs",
+          "RDP connections to Arc-enabled Windows Servers",
+          "Windows Server RDP client devices (device compliance unsupported)",
+        ],
+      };
+    },
+    severity: "medium",
+    docUrl:
+      "https://learn.microsoft.com/entra/identity/devices/howto-vm-sign-in-azure-ad-windows#missing-application",
+    remediation:
+      "If Windows Hello for Business is not deployed, exclude the Microsoft Azure Windows " +
+      `Virtual Machine Sign-In app (${WINDOWS_CLOUD_LOGIN}) from MFA and device compliance policies. ` +
+      "Alternatively, ensure all RDP clients support Windows Hello for Business or FIDO2 security " +
+      "keys for MFA completion.",
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
   // CONTINUOUS ACCESS EVALUATION
   // ═══════════════════════════════════════════════════════════════════════
   {
