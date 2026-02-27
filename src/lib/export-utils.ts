@@ -732,6 +732,9 @@ function addCISSlide(pptx: PptxGenJS, cisResult: CISAlignmentResult) {
     { label: "Pass", value: cisResult.passCount, color: COLORS.green },
     { label: "Fail", value: cisResult.failCount, color: COLORS.red },
     { label: "Manual", value: cisResult.manualCount, color: COLORS.yellow },
+    ...(cisResult.notApplicableCount > 0
+      ? [{ label: "N/A", value: cisResult.notApplicableCount, color: COLORS.muted }]
+      : []),
     { label: "Score", value: `${cisResult.alignmentScore}%`, color: COLORS.accent },
   ];
 

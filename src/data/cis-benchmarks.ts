@@ -21,7 +21,7 @@
  *   - The CIS recommendation text
  */
 
-import { ConditionalAccessPolicy, TenantContext } from "@/lib/graph-client";
+import { ConditionalAccessPolicy, TenantContext, LicenseRequirement, isLicensed } from "@/lib/graph-client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +38,8 @@ export interface CISControl {
   section: string;
   /** What this control requires */
   description: string;
+  /** License required to evaluate this control (undefined = no special license needed) */
+  licenseRequirement?: LicenseRequirement;
   /** The check function — returns pass/fail + detail */
   check: (policies: ConditionalAccessPolicy[], context: TenantContext) => CISCheckResult;
 }
@@ -59,6 +61,7 @@ export interface CISAlignmentResult {
   passCount: number;
   failCount: number;
   manualCount: number;
+  notApplicableCount: number;
   totalControls: number;
   alignmentScore: number; // 0-100 percentage
   benchmarkVersion: string;
@@ -304,6 +307,7 @@ export const CIS_CONTROLS: CISControl[] = [
     title: "Ensure sign-in risk policy is configured",
     level: "L1",
     section: "5.3 - Conditional Access",
+    licenseRequirement: "entraIdP2",
     description:
       "A risk-based CA policy must require MFA or block access for medium and high-risk sign-ins " +
       "detected by Identity Protection. Promoted from L2 to L1 in v6.0.",
@@ -347,6 +351,7 @@ export const CIS_CONTROLS: CISControl[] = [
     title: "Ensure user risk policy is configured",
     level: "L1",
     section: "5.3 - Conditional Access",
+    licenseRequirement: "entraIdP2",
     description:
       "A risk-based CA policy must require password change and MFA for medium and high-risk users " +
       "detected by Identity Protection. Promoted from L2 to L1 in v6.0.",
@@ -609,6 +614,7 @@ export const CIS_CONTROLS: CISControl[] = [
     title: "Ensure high-risk users are blocked",
     level: "L1",
     section: "5.4 - Identity Protection",
+    licenseRequirement: "entraIdP2",
     description:
       "A CA policy should block access for users with high user risk level. This ensures compromised accounts " +
       "are immediately locked out until remediated.",
@@ -640,6 +646,7 @@ export const CIS_CONTROLS: CISControl[] = [
     title: "Ensure high-risk sign-ins are blocked",
     level: "L1",
     section: "5.4 - Identity Protection",
+    licenseRequirement: "entraIdP2",
     description:
       "A CA policy should block access for sign-ins with high risk level. High-risk sign-ins indicate " +
       "strong likelihood of compromised credentials or anomalous behavior.",
@@ -670,6 +677,7 @@ export const CIS_CONTROLS: CISControl[] = [
     title: "Ensure compliant device requirement is configured",
     level: "L2",
     section: "5.4 - Device Compliance",
+    licenseRequirement: "intunePlan1",
     description:
       "A CA policy should require device compliance for accessing corporate resources, ensuring only healthy " +
       "managed devices enrolled in Intune can connect.",
@@ -731,6 +739,7 @@ export const CIS_CONTROLS: CISControl[] = [
     title: "Ensure app protection policy is required for mobile devices",
     level: "L2",
     section: "5.4 - Mobile Security",
+    licenseRequirement: "intunePlan1",
     description:
       "A CA policy should require an Intune app protection policy for mobile device access, ensuring " +
       "corporate data is protected within managed apps even on unmanaged (BYOD) devices.",
@@ -762,6 +771,29 @@ export const CIS_CONTROLS: CISControl[] = [
 
 export function runCISAlignment(context: TenantContext): CISAlignmentResult {
   const results: CISControlResult[] = CIS_CONTROLS.map((control) => {
+    // License-aware: if the control requires a license the tenant doesn't have,
+    // mark it not-applicable so it doesn't penalise the score.
+    if (
+      control.licenseRequirement &&
+      !isLicensed(context.licenses, control.licenseRequirement)
+    ) {
+      const licenseLabel =
+        control.licenseRequirement === "entraIdP2"
+          ? "Entra ID P2"
+          : control.licenseRequirement === "intunePlan1"
+            ? "Intune Plan 1"
+            : "Entra ID P1";
+      return {
+        control,
+        result: {
+          status: "not-applicable" as CISStatus,
+          detail: `Requires ${licenseLabel} license (not detected in tenant).`,
+          matchingPolicies: [],
+          remediation: `This control requires a ${licenseLabel} license to evaluate. Acquire the license or exclude this control from scoring.`,
+        },
+      };
+    }
+
     const result = control.check(context.policies, context);
 
     // If check passed, verify at least one matching policy is truly enforced.
@@ -801,6 +833,9 @@ export function runCISAlignment(context: TenantContext): CISAlignmentResult {
   const manualCount = results.filter(
     (r) => r.result.status === "manual"
   ).length;
+  const notApplicableCount = results.filter(
+    (r) => r.result.status === "not-applicable"
+  ).length;
 
   const scorable = results.filter(
     (r) => r.result.status !== "not-applicable" && r.result.status !== "manual"
@@ -815,6 +850,7 @@ export function runCISAlignment(context: TenantContext): CISAlignmentResult {
     passCount,
     failCount,
     manualCount,
+    notApplicableCount,
     totalControls: CIS_CONTROLS.length,
     alignmentScore,
     benchmarkVersion: "6.0.0",

@@ -75,7 +75,9 @@ function ControlCard({ controlResult }: { controlResult: CISControlResult }) {
           ? "border-emerald-800/50"
           : result.status === "fail"
             ? "border-red-800/50"
-            : "border-gray-800"
+            : result.status === "not-applicable"
+              ? "border-gray-800/50 opacity-60"
+              : "border-gray-800"
       )}
     >
       {/* Header */}
@@ -187,8 +189,8 @@ export function CISView({ result }: CISViewProps) {
   // Group by section
   const sections = [...new Set(result.controls.map((c) => c.control.section))];
 
-  const l1Controls = result.controls.filter((c) => c.control.level === "L1");
-  const l2Controls = result.controls.filter((c) => c.control.level === "L2");
+  const l1Controls = result.controls.filter((c) => c.control.level === "L1" && c.result.status !== "not-applicable");
+  const l2Controls = result.controls.filter((c) => c.control.level === "L2" && c.result.status !== "not-applicable");
   const l1Pass = l1Controls.filter((c) => c.result.status === "pass").length;
   const l2Pass = l2Controls.filter((c) => c.result.status === "pass").length;
 
@@ -202,6 +204,11 @@ export function CISView({ result }: CISViewProps) {
           <p className="text-xs text-gray-600">
             CIS Microsoft 365 Foundations Benchmark v{result.benchmarkVersion ?? "6.0.0"}
           </p>
+          {result.notApplicableCount > 0 && (
+            <p className="text-xs text-gray-600 mt-1">
+              {result.notApplicableCount} control{result.notApplicableCount > 1 ? "s" : ""} excluded (license N/A)
+            </p>
+          )}
         </Card>
 
         <Card className="flex flex-col items-center justify-center p-4">
@@ -218,9 +225,9 @@ export function CISView({ result }: CISViewProps) {
         </Card>
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-gray-400">
-            {result.totalControls}
+            {result.totalControls - result.notApplicableCount}
           </div>
-          <div className="text-xs text-gray-400 mt-1">Total Controls</div>
+          <div className="text-xs text-gray-400 mt-1">Applicable</div>
         </Card>
       </div>
 
@@ -275,7 +282,7 @@ export function CISView({ result }: CISViewProps) {
         <div className="flex items-center gap-2">
           <Filter className="h-4 w-4 text-gray-500" />
           <span className="text-xs text-gray-500">Status:</span>
-          {(["all", "pass", "fail", "manual"] as const).map((f) => (
+          {(["all", "pass", "fail", "manual", "not-applicable"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setStatusFilter(f)}
@@ -288,7 +295,9 @@ export function CISView({ result }: CISViewProps) {
             >
               {f === "all"
                 ? "All"
-                : f.charAt(0).toUpperCase() + f.slice(1)}
+                : f === "not-applicable"
+                  ? "N/A"
+                  : f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
         </div>

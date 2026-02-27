@@ -1,6 +1,7 @@
 "use client";
 
 import { AnalysisResult, CompositeScoreResult } from "@/lib/analyzer";
+import { TenantLicenses } from "@/lib/graph-client";
 import { ScoreRing, StatCard } from "./ui-primitives";
 import {
   ShieldCheck,
@@ -9,6 +10,7 @@ import {
   FileBarChart,
   AlertCircle,
   AlertTriangle,
+  KeyRound,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,12 +44,33 @@ function ScoreBar({
   );
 }
 
+// ─── License Badge ──────────────────────────────────────────────────────────
+
+function LicenseBadge({ label, detected }: { label: string; detected: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+        detected
+          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+          : "bg-gray-800 text-gray-500 border border-gray-700"
+      )}
+    >
+      <span className={cn("h-1.5 w-1.5 rounded-full", detected ? "bg-emerald-400" : "bg-gray-600")} />
+      {label}
+      {detected ? "" : " — not detected"}
+    </span>
+  );
+}
+
 export function Dashboard({
   result,
   compositeScore,
+  licenses,
 }: {
   result: AnalysisResult;
   compositeScore: CompositeScoreResult | null;
+  licenses?: TenantLicenses | null;
 }) {
   const s = result.tenantSummary;
   const score = compositeScore?.overall ?? result.overallScore;
@@ -117,6 +140,27 @@ export function Dashboard({
           variant="default"
         />
       </div>
+
+      {/* Detected Licenses */}
+      {licenses && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <KeyRound className="h-4 w-4 text-gray-400" />
+            <h3 className="text-sm font-medium text-gray-300">Detected Licenses</h3>
+            <span className="text-xs text-gray-600">(affects scoring scope)</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <LicenseBadge label="Entra ID P1" detected={licenses.hasEntraIdP1} />
+            <LicenseBadge label="Entra ID P2" detected={licenses.hasEntraIdP2} />
+            <LicenseBadge label="Intune Plan 1" detected={licenses.hasIntunePlan1} />
+          </div>
+          {(!licenses.hasEntraIdP2 || !licenses.hasIntunePlan1) && (
+            <p className="mt-2 text-xs text-gray-600">
+              Controls requiring undetected licenses are excluded from scoring and marked &ldquo;N/A&rdquo;.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Finding Severity Breakdown */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

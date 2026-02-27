@@ -5,7 +5,7 @@
  * policy templates to determine which are present, missing, or partially matched.
  */
 
-import { ConditionalAccessPolicy, TenantContext } from "@/lib/graph-client";
+import { ConditionalAccessPolicy, TenantContext, isLicensed } from "@/lib/graph-client";
 import {
   PolicyTemplate,
   TemplateFingerprint,
@@ -30,7 +30,7 @@ const ROLE_NAME_MAP: Record<string, string> = Object.fromEntries(
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type MatchStatus = "present" | "partial" | "missing";
+export type MatchStatus = "present" | "partial" | "missing" | "not-applicable";
 
 export interface TemplateMatch {
   template: PolicyTemplate;
@@ -56,6 +56,7 @@ export interface TemplateAnalysisResult {
   presentCount: number;
   partialCount: number;
   missingCount: number;
+  notApplicableCount: number;
   totalTemplates: number;
   coverageScore: number; // 0-100
   byCategoryScore: Record<TemplateCategory, number>;
@@ -345,6 +346,22 @@ export function analyzeTemplates(
   const allPolicies = context.policies;
 
   const matches: TemplateMatch[] = POLICY_TEMPLATES.map((template) => {
+    // License-aware: if the template requires a license the tenant doesn't have,
+    // mark it not-applicable so it doesn't penalise the coverage score.
+    if (
+      template.licenseRequirement &&
+      !isLicensed(context.licenses, template.licenseRequirement)
+    ) {
+      return {
+        template,
+        status: "not-applicable" as MatchStatus,
+        confidence: 0,
+        matchingPolicies: [],
+        differences: [],
+        gaps: [],
+      };
+    }
+
     // Score every policy against this template
     const scored = allPolicies.map((policy) => {
       const { score, differences } = scorePolicyMatch(
@@ -470,8 +487,12 @@ export function analyzeTemplates(
   const presentCount = matches.filter((m) => m.status === "present").length;
   const partialCount = matches.filter((m) => m.status === "partial").length;
   const missingCount = matches.filter((m) => m.status === "missing").length;
+  const notApplicableCount = matches.filter(
+    (m) => m.status === "not-applicable"
+  ).length;
 
   // Weighted coverage score (critical templates count more)
+  // Not-applicable templates are excluded from the denominator
   const priorityWeights: Record<TemplatePriority, number> = {
     critical: 3,
     recommended: 2,
@@ -481,6 +502,7 @@ export function analyzeTemplates(
   let totalWeight = 0;
   let earnedWeight = 0;
   for (const match of matches) {
+    if (match.status === "not-applicable") continue; // skip unlicensed
     const w = priorityWeights[match.template.priority];
     totalWeight += w;
     if (match.status === "present") earnedWeight += w;
@@ -497,7 +519,9 @@ export function analyzeTemplates(
 
   const byCategoryScore = {} as Record<TemplateCategory, number>;
   for (const cat of categories) {
-    const catMatches = matches.filter((m) => m.template.category === cat);
+    const catMatches = matches.filter(
+      (m) => m.template.category === cat && m.status !== "not-applicable"
+    );
     const catPresent = catMatches.filter((m) => m.status === "present").length;
     const catPartial = catMatches.filter((m) => m.status === "partial").length;
     byCategoryScore[cat] =
@@ -513,6 +537,7 @@ export function analyzeTemplates(
     presentCount,
     partialCount,
     missingCount,
+    notApplicableCount,
     totalTemplates: POLICY_TEMPLATES.length,
     coverageScore,
     byCategoryScore,

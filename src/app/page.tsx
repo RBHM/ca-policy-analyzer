@@ -259,7 +259,7 @@ export default function Home() {
       </div>
 
       {/* Tab Content */}
-      {activeTab === "dashboard" && <Dashboard result={result} compositeScore={compositeScore} />}
+      {activeTab === "dashboard" && <Dashboard result={result} compositeScore={compositeScore} licenses={context?.licenses} />}
       {activeTab === "policies" && (
         <PolicyList results={result.policyResults} hideMicrosoft={hideMicrosoft} onToggleHideMicrosoft={setHideMicrosoft} />
       )}

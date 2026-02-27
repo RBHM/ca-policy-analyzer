@@ -8,6 +8,8 @@
  * Source: https://github.com/Jhope188/ConditionalAccessPolicies
  */
 
+import { LicenseRequirement } from "@/lib/graph-client";
+
 // ─── Template Types ──────────────────────────────────────────────────────────
 
 export type TemplateCategory =
@@ -40,6 +42,8 @@ export interface PolicyTemplate {
   rationale: string;
   /** CIS benchmark control IDs this template satisfies (if any) */
   cisControls?: string[];
+  /** License required for this template (P2 or Intune) — if absent, P1 is enough */
+  licenseRequirement?: LicenseRequirement;
   /** The matching fingerprint — used to detect if the tenant already has this */
   fingerprint: TemplateFingerprint;
   /** Full Graph-compatible JSON for deployment */
@@ -791,6 +795,192 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     },
   },
 
+  // ─── Additional App-Specific ───────────────────────────────────────────────
+  {
+    id: "app-block-avd-exclude-allowed",
+    displayName: "APP - BLOCK - AVD - Exclude AllowedAVDUsers",
+    category: "app-specific",
+    controlType: "BLOCK",
+    priority: "optional",
+    summary:
+      "Block access to Azure Virtual Desktop except for explicitly allowed users",
+    rationale:
+      "Azure Virtual Desktop should be limited to a specific user group. Blocking all users except an allowed AVD group prevents unauthorized remote desktop access.",
+    fingerprint: {
+      includeApps: [
+        "0af06dc6-e4b5-4f28-818e-e78e62d137a5",
+        "9cdead84-a844-4324-93f2-b2e6bb768d07",
+      ],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - APP - BLOCK - AVD - Exclude AllowedAVDUsers",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [
+            "0af06dc6-e4b5-4f28-818e-e78e62d137a5",
+            "9cdead84-a844-4324-93f2-b2e6bb768d07",
+          ],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "app-block-avd-nontrusted",
+    displayName: "APP - BLOCK - AVD - NonTrustedLocations",
+    category: "app-specific",
+    controlType: "BLOCK",
+    priority: "optional",
+    summary:
+      "Block Azure Virtual Desktop access from non-trusted network locations",
+    rationale:
+      "AVD sessions should only originate from trusted corporate locations. Blocking untrusted locations prevents remote desktop hijacking from compromised networks.",
+    fingerprint: {
+      includeApps: [
+        "0af06dc6-e4b5-4f28-818e-e78e62d137a5",
+        "9cdead84-a844-4324-93f2-b2e6bb768d07",
+      ],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      clientAppTypes: ["all"],
+      usesLocationCondition: true,
+    },
+    deploymentJson: {
+      displayName: "YOURORG - APP - BLOCK - AVD - NonTrustedLocations",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: [
+            "0af06dc6-e4b5-4f28-818e-e78e62d137a5",
+            "9cdead84-a844-4324-93f2-b2e6bb768d07",
+          ],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        locations: {
+          includeLocations: ["All"],
+          excludeLocations: ["AllTrusted"],
+        },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "app-block-o365-nonworkinghours",
+    displayName: "O365 - BLOCK - NonWorkingHours",
+    category: "app-specific",
+    controlType: "BLOCK",
+    priority: "optional",
+    summary:
+      "Block access to Office 365 outside of standard working hours",
+    rationale:
+      "Restricting O365 access to business hours (e.g., Mon–Fri 9 AM–5 PM) reduces the window for after-hours attacks and limits data exfiltration outside normal operations.",
+    fingerprint: {
+      includeApps: ["Office365"],
+      grantControls: ["block"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - O365 - BLOCK - NonWorkingHours",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["Office365"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "baseline-block-countries-noexclusions",
+    displayName: "GLOBAL - BLOCK - Countries-NotAllowed - NoExclusions",
+    category: "baseline",
+    controlType: "BLOCK",
+    priority: "optional",
+    summary:
+      "Block access from non-allowed countries with no group exclusions (strict)",
+    rationale:
+      "A hardline country-block policy with no traveling-user or global bypass groups. This is the strictest form of geo-blocking — only the breakglass account is excluded.",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      targetsAllUsers: true,
+      usesLocationCondition: true,
+    },
+    deploymentJson: {
+      displayName:
+        "YOURORG - GLOBAL - BLOCK - Countries-NotAllowed - NoExclusions",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        locations: {
+          includeLocations: ["All"],
+          excludeLocations: [],
+        },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+
   // ═══════════════════════════════════════════════════════════════════════
   // INTUNE POLICIES
   // ═══════════════════════════════════════════════════════════════════════
@@ -803,6 +993,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     summary: "Require compliant device for mobile apps and desktop clients",
     rationale:
       "Requiring device compliance for thick clients ensures that only managed, healthy devices can access organizational resources through native apps.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["All"],
       grantControls: ["compliantDevice"],
@@ -845,6 +1036,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Require compliant device or app protection policy for mobile access to Office 365",
     rationale:
       "For mobile devices, requiring either device compliance OR an app protection policy enables BYOD scenarios while maintaining data protection on iOS and Android.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["Office365"],
       grantControls: ["compliantDevice", "compliantApplication"],
@@ -894,6 +1086,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Block non-compliant/non-hybrid-joined devices from non-trusted locations",
     rationale:
       "Devices that are not compliant or Hybrid Azure AD joined should be blocked when connecting from outside trusted corporate locations to reduce lateral movement risk.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["All"],
       grantControls: ["block"],
@@ -937,6 +1130,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Require compliant device or Hybrid Azure AD joined device for all apps",
     rationale:
       "Requiring device compliance or Hybrid Azure AD join ensures that only managed, healthy devices can access corporate resources. This is a cornerstone Intune policy.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["All"],
       grantControls: ["compliantDevice", "domainJoinedDevice"],
@@ -985,6 +1179,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Require MFA for device registration, restrict to trusted locations",
     rationale:
       "Limiting device registration to trusted network locations and requiring MFA prevents rogue device enrollment from untrusted networks or by threat actors with stolen credentials.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: [],
       includeUserActions: ["urn:user:registerdevice"],
@@ -1028,6 +1223,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Block file downloads from Office 365 on unmanaged (non-compliant) devices",
     rationale:
       "Preventing file downloads on unmanaged devices limits data exfiltration risk while still allowing browser-based viewing of corporate data for BYOD users.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["Office365"],
       targetsAllUsers: true,
@@ -1073,6 +1269,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Enforce sign-in frequency and disable persistent browser for BYOD / non-compliant devices",
     rationale:
       "BYOD devices are higher risk — disabling persistent browser sessions and enforcing re-authentication every 9 hours limits the window of exposure if a session token is compromised.",
+    licenseRequirement: "intunePlan1",
     fingerprint: {
       includeApps: ["All"],
       targetsAllUsers: true,
@@ -1128,6 +1325,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Require phishing-resistant MFA for high-risk sign-ins",
     rationale:
       "Identity Protection high-risk sign-ins indicate likely compromise attempts. Requiring strong MFA (FIDO2, WHfB, certificate) blocks even MFA-bypass attacks like adversary-in-the-middle (AiTM).",
+    licenseRequirement: "entraIdP2",
     cisControls: ["6.3.1"],
     fingerprint: {
       includeApps: ["All"],
@@ -1174,6 +1372,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     summary: "Require MFA for medium-risk sign-ins",
     rationale:
       "Medium-risk sign-ins may indicate token replay, unusual travel, or anomalous behavior. Requiring MFA provides a safety net.",
+    licenseRequirement: "entraIdP2",
     cisControls: ["6.3.1"],
     fingerprint: {
       includeApps: ["All"],
@@ -1216,6 +1415,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Require MFA and password change for high-risk users",
     rationale:
       "High-risk users have confirmed compromised credentials (from dark web leaks or confirmed breaches). Forcing MFA + password change remediates the compromise.",
+    licenseRequirement: "entraIdP2",
     cisControls: ["6.3.2"],
     fingerprint: {
       includeApps: ["All"],
@@ -1268,6 +1468,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     summary: "Require MFA and password change for medium-risk users",
     rationale:
       "Medium-risk users may have leaked credentials or suspicious activity patterns. Proactively requiring password change reduces exposure.",
+    licenseRequirement: "entraIdP2",
     cisControls: ["6.3.2"],
     fingerprint: {
       includeApps: ["All"],
@@ -1312,6 +1513,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
       "Block risky users from registering new security info (MFA methods)",
     rationale:
       "If a user is flagged as medium/high risk, they should not be able to register new MFA methods — an attacker could register their own authenticator on a compromised account.",
+    licenseRequirement: "entraIdP2",
     fingerprint: {
       includeApps: [],
       grantControls: ["block"],
@@ -1536,6 +1738,7 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     summary: "Block high-risk AI agents and service principals",
     rationale:
       "As organizations adopt AI agents, controlling their access is critical. Block agents flagged as high-risk by Identity Protection.",
+    licenseRequirement: "entraIdP2",
     fingerprint: {
       includeApps: ["All"],
       grantControls: ["block"],

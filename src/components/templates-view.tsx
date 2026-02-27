@@ -21,6 +21,7 @@ import {
   Download,
   ExternalLink,
   Filter,
+  Ban,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +41,7 @@ function StatusBadge({ status }: { status: MatchStatus }) {
     present: { label: "Present", color: "text-emerald-400 bg-emerald-400/10", Icon: CheckCircle2 },
     partial: { label: "Partial", color: "text-amber-400 bg-amber-400/10", Icon: AlertCircle },
     missing: { label: "Missing", color: "text-red-400 bg-red-400/10", Icon: XCircle },
+    "not-applicable": { label: "N/A — License", color: "text-gray-500 bg-gray-500/10", Icon: Ban },
   };
   const { label, color, Icon } = map[status];
   return (
@@ -88,7 +90,9 @@ function TemplateCard({ match }: { match: TemplateMatch }) {
           ? "border-emerald-800/50"
           : match.status === "partial"
             ? "border-amber-800/50"
-            : "border-gray-800"
+            : match.status === "not-applicable"
+              ? "border-gray-800/50 opacity-60"
+              : "border-gray-800"
       )}
     >
       {/* Header */}
@@ -268,6 +272,8 @@ function CategorySection({
   const present = matches.filter((m) => m.status === "present").length;
   const partial = matches.filter((m) => m.status === "partial").length;
   const missing = matches.filter((m) => m.status === "missing").length;
+  const na = matches.filter((m) => m.status === "not-applicable").length;
+  const applicable = matches.length - na;
 
   return (
     <div className="space-y-3">
@@ -279,7 +285,7 @@ function CategorySection({
           <span className="text-lg">{meta.icon}</span>
           <h3 className="text-base font-semibold text-white">{meta.label}</h3>
           <span className="text-xs text-gray-500">
-            {present}/{matches.length} present
+            {present}/{applicable} present{na > 0 ? ` · ${na} N/A` : ""}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -292,6 +298,9 @@ function CategorySection({
             )}
             {missing > 0 && (
               <span className="text-red-400">{missing}✗</span>
+            )}
+            {na > 0 && (
+              <span className="text-gray-500">{na} N/A</span>
             )}
           </div>
           <div
@@ -382,7 +391,10 @@ export function TemplatesView({ result }: TemplatesViewProps) {
           <ScoreRing score={result.coverageScore} />
           <p className="mt-3 text-sm text-gray-400">Template Coverage</p>
           <p className="text-xs text-gray-600">
-            Based on {result.totalTemplates} recommended policies
+            Based on {result.totalTemplates - result.notApplicableCount} applicable policies
+            {result.notApplicableCount > 0 && (
+              <span> ({result.notApplicableCount} excluded — license N/A)</span>
+            )}
           </p>
         </Card>
 
@@ -438,9 +450,9 @@ export function TemplatesView({ result }: TemplatesViewProps) {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <Filter className="h-4 w-4 text-gray-500" />
-        {(["all", "missing", "partial", "present"] as const).map((f) => (
+        {(["all", "missing", "partial", "present", "not-applicable"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setStatusFilter(f)}
@@ -451,7 +463,7 @@ export function TemplatesView({ result }: TemplatesViewProps) {
                 : "text-gray-400 hover:text-white"
             )}
           >
-            {f === "all" ? "All" : f.charAt(0).toUpperCase() + f.slice(1)}
+            {f === "all" ? "All" : f === "not-applicable" ? "N/A" : f.charAt(0).toUpperCase() + f.slice(1)}
             {f !== "all" && (
               <span className="ml-1 text-gray-500">
                 (
@@ -459,7 +471,9 @@ export function TemplatesView({ result }: TemplatesViewProps) {
                   ? result.missingCount
                   : f === "partial"
                     ? result.partialCount
-                    : result.presentCount}
+                    : f === "not-applicable"
+                      ? result.notApplicableCount
+                      : result.presentCount}
                 )
               </span>
             )}

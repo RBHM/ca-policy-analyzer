@@ -116,11 +116,27 @@ export interface DirectoryObject {
 
 // ─── Tenant Context ──────────────────────────────────────────────────────────
 
+export type LicenseRequirement = "entraIdP1" | "entraIdP2" | "intunePlan1";
+
+export interface TenantLicenses {
+  hasEntraIdP1: boolean;
+  hasEntraIdP2: boolean;
+  hasIntunePlan1: boolean;
+}
+
+/** Well-known service plan IDs */
+const SERVICE_PLAN_IDS: Record<string, string> = {
+  entraIdP1: "41781fb2-bc02-4b7c-bd55-b576c07bb09d",
+  entraIdP2: "eec0eb4f-6444-4f95-aba0-50c24d67f998",
+  intunePlan1: "c1ec4a95-1f05-45b3-a911-aa3fa01094f5",
+};
+
 export interface TenantContext {
   policies: ConditionalAccessPolicy[];
   namedLocations: NamedLocation[];
   servicePrincipals: Map<string, ServicePrincipal>;
   directoryObjects: Map<string, DirectoryObject>;
+  licenses: TenantLicenses;
 }
 
 // ─── Graph Client Factory ────────────────────────────────────────────────────
@@ -270,6 +286,86 @@ export async function resolveDirectoryObjects(
   return map;
 }
 
+// ─── License Detection ───────────────────────────────────────────────────────
+
+async function fetchSubscribedSkus(
+  client: Client
+): Promise<TenantLicenses> {
+  try {
+    const skus = await fetchAllPages<{
+      skuPartNumber: string;
+      servicePlans: { servicePlanId: string; servicePlanName: string; appliesTo: string }[];
+    }>(client, "/subscribedSkus");
+
+    const allPlanIds = new Set(
+      skus.flatMap((sku) =>
+        sku.servicePlans.map((sp) => sp.servicePlanId.toLowerCase())
+      )
+    );
+
+    return {
+      hasEntraIdP1:
+        allPlanIds.has(SERVICE_PLAN_IDS.entraIdP1) ||
+        allPlanIds.has(SERVICE_PLAN_IDS.entraIdP2), // P2 implies P1
+      hasEntraIdP2: allPlanIds.has(SERVICE_PLAN_IDS.entraIdP2),
+      hasIntunePlan1: allPlanIds.has(SERVICE_PLAN_IDS.intunePlan1),
+    };
+  } catch (e) {
+    console.warn(
+      "Could not fetch subscribedSkus — falling back to policy-based inference.",
+      e
+    );
+    return inferLicensesFromPolicies([]);
+  }
+}
+
+/**
+ * Fallback: infer licenses from the policies already present in the tenant.
+ * If a tenant has risk-based policies, they very likely have P2.
+ * If a tenant has compliantDevice policies, they likely have Intune.
+ */
+export function inferLicensesFromPolicies(
+  policies: ConditionalAccessPolicy[]
+): TenantLicenses {
+  const enabled = policies.filter(
+    (p) => p.state === "enabled" || p.state === "enabledForReportingButNotEnforced"
+  );
+
+  const hasP2 = enabled.some(
+    (p) =>
+      (p.conditions.signInRiskLevels?.length ?? 0) > 0 ||
+      (p.conditions.userRiskLevels?.length ?? 0) > 0
+  );
+
+  const hasIntune = enabled.some((p) =>
+    p.grantControls?.builtInControls.includes("compliantDevice")
+  );
+
+  return {
+    hasEntraIdP1: true, // CA itself requires P1
+    hasEntraIdP2: hasP2,
+    hasIntunePlan1: hasIntune,
+  };
+}
+
+/** Check whether a specific license requirement is met */
+export function isLicensed(
+  licenses: TenantLicenses,
+  req?: LicenseRequirement
+): boolean {
+  if (!req) return true;
+  switch (req) {
+    case "entraIdP1":
+      return licenses.hasEntraIdP1;
+    case "entraIdP2":
+      return licenses.hasEntraIdP2;
+    case "intunePlan1":
+      return licenses.hasIntunePlan1;
+    default:
+      return true;
+  }
+}
+
 // ─── Normalization ───────────────────────────────────────────────────────────
 
 /** Ensure all expected array fields exist — beta API may return null/undefined */
@@ -355,5 +451,14 @@ export async function loadTenantContext(
   onProgress?.("Resolving directory objects…");
   const directoryObjects = await resolveDirectoryObjects(client, policies);
 
-  return { policies, namedLocations, servicePrincipals, directoryObjects };
+  onProgress?.("Detecting tenant licenses…");
+  let licenses: TenantLicenses;
+  try {
+    licenses = await fetchSubscribedSkus(client);
+  } catch {
+    // Fall back to policy-based inference if the API call fails
+    licenses = inferLicensesFromPolicies(policies);
+  }
+
+  return { policies, namedLocations, servicePrincipals, directoryObjects, licenses };
 }
