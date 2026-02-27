@@ -34,22 +34,31 @@ function isMicrosoftManaged(pr: PolicyResult): boolean {
 /** Load the default logo from public/logo.png as a base64 data URI */
 export async function loadDefaultLogo(): Promise<string | null> {
   try {
-    // Detect Next.js basePath for GitHub Pages deployment
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const basePath =
-      typeof window !== "undefined" && (window as any).__NEXT_DATA__?.basePath
-        ? String((window as any).__NEXT_DATA__.basePath)
-        : "";
-    /* eslint-enable @typescript-eslint/no-explicit-any */
-    const resp = await fetch(`${basePath}/logo.png`);
-    if (!resp.ok) return null;
-    const blob = await resp.blob();
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
+    // Try multiple paths to handle both local dev and GitHub Pages deployment
+    const candidates = [
+      `${window.location.origin}${window.location.pathname.replace(/\/[^/]*$/, "")}/logo.png`,
+      `${window.location.origin}/ca-policy-analyzer/logo.png`,
+      `${window.location.origin}/logo.png`,
+    ];
+
+    for (const url of candidates) {
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) continue;
+        const contentType = resp.headers.get("content-type") ?? "";
+        if (!contentType.startsWith("image/")) continue;
+        const blob = await resp.blob();
+        return new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
+      } catch {
+        continue;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -302,6 +311,23 @@ export async function exportToPowerPoint(
     w: 11,
     h: 0.5,
     fontSize: 14,
+    fontFace: "Arial",
+    color: COLORS.muted,
+  });
+
+  // Show policy count and filter indicator
+  const totalCount = analysis.policyResults.length;
+  const exportedCount = policyResults.length;
+  const filterNote =
+    options?.hideMicrosoftPolicies && exportedCount < totalCount
+      ? `${exportedCount} policies exported (${totalCount - exportedCount} Microsoft-managed hidden)`
+      : `${exportedCount} policies`;
+  titleSlide.addText(filterNote, {
+    x: 0.8,
+    y: 4.7,
+    w: 11,
+    h: 0.4,
+    fontSize: 11,
     fontFace: "Arial",
     color: COLORS.muted,
   });

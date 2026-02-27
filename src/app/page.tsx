@@ -238,11 +238,11 @@ export default function Home() {
           <button
             onClick={async () => {
               if (!result) return;
-              // Load default logo on first export if not already loaded
+              // Load default logo on first export (retry if previous attempt failed)
               let logo = logoBase64;
-              if (logo === null) {
+              if (!logo) {
                 logo = await loadDefaultLogo();
-                setLogoBase64(logo);
+                if (logo) setLogoBase64(logo);
               }
               await exportToPowerPoint(result, cisResult, compositeScore, {
                 hideMicrosoftPolicies: hideMicrosoft,
