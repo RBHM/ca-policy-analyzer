@@ -19,6 +19,8 @@
 
 The app runs **100% in your browser** — your data never leaves your machine. It connects directly to Microsoft Graph using your own credentials (delegated permissions).
 
+![New Conditional Access Policy Analyzer](docs/screenshots/CondtionalAccessAnalyzer.png)
+
 ---
 
 ## Screenshots

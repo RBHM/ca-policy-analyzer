@@ -12,7 +12,7 @@ import { FindingsList } from "@/components/findings-list";
 import { TemplatesView } from "@/components/templates-view";
 import { CISView } from "@/components/cis-view";
 import { ExclusionsView } from "@/components/exclusions-view";
-import { Shield, Loader2, Play, Download, RefreshCw } from "lucide-react";
+import { Shield, Loader2, Play, Download, RefreshCw, LayoutDashboard, FileText, AlertTriangle, Layers, CheckSquare, BookOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type ViewTab = "dashboard" | "policies" | "findings" | "templates" | "cis" | "ms-learn";
@@ -157,52 +157,64 @@ export default function Home() {
     );
   }
 
+  // ── Tab definitions ──────────────────────────────────────────────────
+  const tabs = [
+    { key: "dashboard" as const, label: "Dashboard", icon: LayoutDashboard },
+    { key: "policies" as const, label: "Policies", icon: FileText },
+    { key: "findings" as const, label: "Findings", icon: AlertTriangle },
+    { key: "templates" as const, label: "Templates", icon: Layers },
+    { key: "cis" as const, label: "CIS", icon: CheckSquare },
+    { key: "ms-learn" as const, label: "MS Learn", icon: BookOpen },
+  ];
+
   // ── Results View ──────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Tab Bar + Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex gap-1 rounded-lg bg-gray-900 p-1">
-          {(
-            [
-              { key: "dashboard", label: "Dashboard" },
-              { key: "policies", label: "Policies" },
-              { key: "findings", label: "All Findings" },
-              { key: "templates", label: "Templates" },
-              { key: "cis", label: "CIS Alignment" },
-              { key: "ms-learn", label: "MS Learn" },
-            ] as const
-          ).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "rounded-md px-4 py-2 text-sm font-medium transition-colors",
-                activeTab === tab.key
-                  ? "bg-gray-800 text-white"
-                  : "text-gray-400 hover:text-white"
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <div className="flex items-center justify-between gap-2">
+        {/* Scrollable tab strip — icons only on mobile, icons + labels on sm+ */}
+        <div className="min-w-0 flex-1 overflow-x-auto scrollbar-hide">
+          <div className="inline-flex gap-1 rounded-lg bg-gray-900 p-1">
+            {tabs.map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  title={tab.label}
+                  className={cn(
+                    "flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-2 text-sm font-medium transition-colors sm:px-3",
+                    activeTab === tab.key
+                      ? "bg-gray-800 text-white"
+                      : "text-gray-400 hover:text-white"
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="hidden sm:inline">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex gap-2">
+        {/* Action buttons — icon-only on mobile */}
+        <div className="flex shrink-0 gap-2">
           <button
             onClick={runAnalysis}
             disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+            title="Re-scan"
+            className="flex items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors sm:px-3"
           >
             <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            Re-scan
+            <span className="hidden sm:inline">Re-scan</span>
           </button>
           <button
             onClick={exportResults}
-            className="flex items-center gap-2 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors"
+            title="Export JSON"
+            className="flex items-center gap-2 rounded-lg border border-gray-700 px-2.5 py-2 text-sm text-gray-300 hover:bg-gray-800 transition-colors sm:px-3"
           >
             <Download className="h-4 w-4" />
-            Export JSON
+            <span className="hidden sm:inline">Export</span>
           </button>
         </div>
       </div>
