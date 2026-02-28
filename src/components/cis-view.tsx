@@ -453,7 +453,7 @@ export function CISView({ result }: CISViewProps) {
   return (
     <div className="space-y-6">
       {/* Summary Header */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
         <Card className="flex flex-col items-center justify-center p-6 sm:col-span-2">
           <ScoreRing score={result.alignmentScore} />
           <p className="mt-3 text-sm text-gray-400">CIS Alignment Score</p>
@@ -478,6 +478,12 @@ export function CISView({ result }: CISViewProps) {
             {result.failCount}
           </div>
           <div className="text-xs text-gray-400 mt-1">Failing</div>
+        </Card>
+        <Card className="flex flex-col items-center justify-center p-4">
+          <div className="text-3xl font-bold text-amber-400">
+            {result.manualCount}
+          </div>
+          <div className="text-xs text-gray-400 mt-1">Manual</div>
         </Card>
         <Card className="flex flex-col items-center justify-center p-4">
           <div className="text-3xl font-bold text-gray-400">
