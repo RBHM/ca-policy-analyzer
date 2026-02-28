@@ -110,6 +110,24 @@ export interface PolicyGuidance {
   suggestedName: string;
   /** Ordered portal steps — each step maps to a tab / blade in the Entra admin center */
   portalSteps: PortalStep[];
+  /** Prerequisite steps that must be completed before the CA policy (e.g. Intune config) */
+  prerequisiteSteps?: PrerequisiteSection[];
+  /** Sample JSON template for the CA policy */
+  sampleJson?: object;
+}
+
+export interface PrerequisiteSection {
+  /** Section title, e.g. "Part 1: Create Intune App Protection Policies" */
+  title: string;
+  /** Ordered steps within this prerequisite section */
+  steps: PrerequisiteStep[];
+}
+
+export interface PrerequisiteStep {
+  /** Step label */
+  label: string;
+  /** Detailed instructions for this step */
+  instructions: string[];
 }
 
 export interface PortalStep {
@@ -1151,14 +1169,77 @@ export const CIS_CONTROLS: CISControl[] = [
       "corporate data is protected within managed apps even on unmanaged (BYOD) devices.",
     policyGuidance: {
       suggestedName: "YOURORG - INTUNE - GRANT - AppProtection-Mobile",
+      prerequisiteSteps: [
+        {
+          title: "Part 1: Create Intune App Protection Policies",
+          steps: [
+            {
+              label: "Create iOS App Protection Policy",
+              instructions: [
+                "Sign in to Intune admin center (intune.microsoft.com) → Apps → App protection policies",
+                "Click + Create policy → iOS/iPadOS",
+                "Name: YOURORG - iOS App Protection Policy",
+                "Target apps: Core Microsoft Apps (Outlook, Teams, OneDrive, Edge, Word, Excel, PowerPoint, OneNote, SharePoint, To Do)",
+                "Data protection: Block org data transfer to unmanaged apps, Restrict cut/copy/paste between apps, Encrypt org data",
+                "Access requirements: Require PIN for access, require biometric instead of PIN (optional)",
+                "Conditional launch: Max OS version, jailbreak/rooted detection → Block access",
+                "Assignments: All Users (or target security group)",
+              ],
+            },
+            {
+              label: "Create Android App Protection Policy",
+              instructions: [
+                "In Intune admin center → Apps → App protection policies",
+                "Click + Create policy → Android",
+                "Name: YOURORG - Android App Protection Policy",
+                "Target apps: Core Microsoft Apps (same set as iOS)",
+                "Data protection: Block org data transfer to unmanaged apps, Restrict cut/copy/paste, Encrypt org data, Block screen capture",
+                "Access requirements: Require PIN for access, require biometric instead of PIN (optional)",
+                "Conditional launch: Max OS version, rooted device detection → Block access, SafetyNet device attestation → Block access",
+                "Assignments: All Users (or target security group)",
+              ],
+            },
+            {
+              label: "Install Broker Apps (User Requirement)",
+              instructions: [
+                "iOS devices: Users must install Microsoft Authenticator from the App Store",
+                "Android devices: Users must install Intune Company Portal from the Play Store",
+                "These broker apps are required for app protection policy enforcement",
+              ],
+            },
+          ],
+        },
+      ],
       portalSteps: [
         { tab: "Name", instructions: ["Enter policy name: YOURORG - INTUNE - GRANT - AppProtection-Mobile"] },
-        { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass accounts and users with fully managed (compliant) devices"] },
-        { tab: "Target resources", instructions: ["Cloud apps → Include → All cloud apps (or select Office 365)"] },
-        { tab: "Conditions", instructions: ["Device platforms → Configure Yes → Include: Android, iOS only"] },
-        { tab: "Grant", instructions: ["Grant access → Require app protection policy (and/or Require approved client app)"] },
-        { tab: "Enable policy", instructions: ["Set to Report-only first — ensure Intune App Protection Policies are created for iOS and Android, then switch to On"] },
+        { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass / emergency access accounts", "Exclude → users with fully managed (compliant) devices if desired"] },
+        { tab: "Target resources", instructions: ["Cloud apps → Include → All cloud apps (or select Office 365 suite)"] },
+        { tab: "Conditions", instructions: ["Device platforms → Configure Yes → Include: Android, iOS only", "Client apps → Mobile apps and desktop clients"] },
+        { tab: "Grant", instructions: ["Grant access → Select both:", "✅ Require approved client app", "✅ Require app protection policy", "For multiple controls → Require one of the selected controls (OR)"] },
+        { tab: "Enable policy", instructions: ["Set to Report-only first", "Verify sign-in logs and CA insights workbook", "Once confirmed, switch to On"] },
       ],
+      sampleJson: {
+        displayName: "YOURORG - INTUNE - GRANT - AppProtection-Mobile",
+        state: "disabled",
+        conditions: {
+          users: {
+            includeUsers: ["All"],
+            excludeUsers: [],
+            excludeGroups: ["<Break-Glass-Group-ID>"],
+          },
+          applications: {
+            includeApplications: ["All"],
+          },
+          platforms: {
+            includePlatforms: ["android", "iOS"],
+          },
+          clientAppTypes: ["mobileAppsAndDesktopClients"],
+        },
+        grantControls: {
+          operator: "OR",
+          builtInControls: ["approvedApplication", "compliantApplication"],
+        },
+      },
     },
     msLearnLinks: [
       { label: "MS Learn: Require app protection policy", url: "https://learn.microsoft.com/entra/identity/conditional-access/policy-all-users-device-compliance" },

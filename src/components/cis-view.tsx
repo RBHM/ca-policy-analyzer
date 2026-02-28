@@ -9,6 +9,8 @@ import {
   NearMissPolicy,
   MSLearnReference,
   Advisory,
+  PrerequisiteSection,
+  PrerequisiteStep,
 } from "@/data/cis-benchmarks";
 import { ScoreRing, Card } from "./ui-primitives";
 import {
@@ -24,6 +26,7 @@ import {
   BookOpen,
   Info,
   ExternalLink,
+  Code,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -317,52 +320,108 @@ function ControlCard({ controlResult }: { controlResult: CISControlResult }) {
           )}
 
           {/* Policy Creation Guidance */}
-          {result.status === "fail" && control.policyGuidance && (
-            <div>
-              <h5 className="text-xs font-medium text-teal-400 uppercase mb-2 flex items-center gap-1.5">
-                <ClipboardList className="h-3.5 w-3.5" />
-                Recommended Policy
-              </h5>
-              <div className="rounded-lg bg-teal-400/5 border border-teal-800/30 p-4 space-y-3">
-                {/* Suggested name */}
-                <div>
-                  <span className="text-xs text-gray-400">Suggested Name:</span>
-                  <div className="mt-1 rounded bg-gray-800 px-3 py-2 font-mono text-sm text-teal-300">
-                    {control.policyGuidance.suggestedName}
-                  </div>
-                </div>
-
-                {/* Portal steps */}
-                <div>
-                  <span className="text-xs text-gray-400">
-                    Entra Admin Center → Protection → Conditional Access → + New policy:
-                  </span>
-                  <ol className="mt-2 space-y-2">
-                    {control.policyGuidance.portalSteps.map((step, i) => (
-                      <li key={i} className="flex gap-3">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-400/10 text-xs font-bold text-teal-400">
-                          {i + 1}
-                        </span>
-                        <div className="min-w-0">
-                          <span className="text-sm font-semibold text-white">
-                            {step.tab}
-                          </span>
-                          <ul className="mt-0.5 space-y-0.5">
+          {(result.status === "fail" || result.status === "manual") && control.policyGuidance && (
+            <div className="space-y-4">
+              {/* Prerequisite Steps (e.g. Intune App Protection Policies) */}
+              {control.policyGuidance.prerequisiteSteps && control.policyGuidance.prerequisiteSteps.length > 0 && (
+                control.policyGuidance.prerequisiteSteps.map((section, si) => (
+                  <div key={si}>
+                    <h5 className="text-xs font-medium text-purple-400 uppercase mb-2 flex items-center gap-1.5">
+                      <ClipboardList className="h-3.5 w-3.5" />
+                      {section.title}
+                    </h5>
+                    <div className="rounded-lg bg-purple-400/5 border border-purple-800/30 p-4 space-y-4">
+                      {section.steps.map((step, stepIdx) => (
+                        <div key={stepIdx}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-purple-400/10 text-xs font-bold text-purple-400">
+                              {stepIdx + 1}
+                            </span>
+                            <span className="text-sm font-semibold text-purple-300">
+                              {step.label}
+                            </span>
+                          </div>
+                          <ul className="ml-8 space-y-1">
                             {step.instructions.map((inst, j) => (
                               <li
                                 key={j}
-                                className="text-sm text-gray-300 before:content-['→_'] before:text-teal-600"
+                                className="text-sm text-gray-300 before:content-['\2192_'] before:text-purple-600"
                               >
                                 {inst}
                               </li>
                             ))}
                           </ul>
                         </div>
-                      </li>
-                    ))}
-                  </ol>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {/* Part 2: CA Policy Creation */}
+              <div>
+                <h5 className="text-xs font-medium text-teal-400 uppercase mb-2 flex items-center gap-1.5">
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  {control.policyGuidance.prerequisiteSteps && control.policyGuidance.prerequisiteSteps.length > 0
+                    ? "Part 2: Create Conditional Access Policy"
+                    : "Recommended Policy"}
+                </h5>
+                <div className="rounded-lg bg-teal-400/5 border border-teal-800/30 p-4 space-y-3">
+                  {/* Suggested name */}
+                  <div>
+                    <span className="text-xs text-gray-400">Suggested Name:</span>
+                    <div className="mt-1 rounded bg-gray-800 px-3 py-2 font-mono text-sm text-teal-300">
+                      {control.policyGuidance.suggestedName}
+                    </div>
+                  </div>
+
+                  {/* Portal steps */}
+                  <div>
+                    <span className="text-xs text-gray-400">
+                      Entra Admin Center → Protection → Conditional Access → + New policy:
+                    </span>
+                    <ol className="mt-2 space-y-2">
+                      {control.policyGuidance.portalSteps.map((step, i) => (
+                        <li key={i} className="flex gap-3">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-teal-400/10 text-xs font-bold text-teal-400">
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <span className="text-sm font-semibold text-white">
+                              {step.tab}
+                            </span>
+                            <ul className="mt-0.5 space-y-0.5">
+                              {step.instructions.map((inst, j) => (
+                                <li
+                                  key={j}
+                                  className="text-sm text-gray-300 before:content-['\2192_'] before:text-teal-600"
+                                >
+                                  {inst}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
                 </div>
               </div>
+
+              {/* Sample JSON Template */}
+              {control.policyGuidance.sampleJson && (
+                <div>
+                  <h5 className="text-xs font-medium text-cyan-400 uppercase mb-2 flex items-center gap-1.5">
+                    <Code className="h-3.5 w-3.5" />
+                    Sample CA Policy JSON Template
+                  </h5>
+                  <div className="rounded-lg bg-cyan-400/5 border border-cyan-800/30 p-4">
+                    <pre className="text-xs text-cyan-300 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+                      {JSON.stringify(control.policyGuidance.sampleJson, null, 2)}
+                    </pre>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
