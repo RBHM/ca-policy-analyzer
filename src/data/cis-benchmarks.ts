@@ -649,7 +649,8 @@ export const CIS_CONTROLS: CISControl[] = [
       ],
     },
     msLearnLinks: [
-      { label: "MS Learn: Require MFA for admin portals", url: "https://learn.microsoft.com/entra/identity/conditional-access/policy-old-require-mfa-admin-portals" },
+      { label: "MS Learn: Named locations in Conditional Access", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-assignment-network" },
+      { label: "MS Learn: Block access by location", url: "https://learn.microsoft.com/entra/identity/conditional-access/howto-conditional-access-policy-location" },
     ],
     check: (policies) => {
       const matching = getEnabled(policies).filter((p) => {
@@ -663,6 +664,74 @@ export const CIS_CONTROLS: CISControl[] = [
         );
       });
 
+      // ── Near-miss detection for geo-blocking policies ──────────────
+      // Catches policies that have block + location conditions but are
+      // missing Cloud Apps or Users scope, or are disabled/report-only.
+      const nearMissPolicies: NearMissPolicy[] = [];
+
+      if (matching.length === 0) {
+        for (const p of getEnabled(policies)) {
+          const locs = p.conditions.locations;
+          const hasBlock = hasGrantControl(p, "block");
+          const hasLocations = locs != null && locs.includeLocations.length > 0;
+
+          // Only consider policies that look like geo-blocking attempts
+          if (!hasBlock || !hasLocations) continue;
+
+          const met: string[] = [];
+          const gaps: string[] = [];
+
+          met.push("Grant control: Block access ✓");
+          met.push("Location conditions configured ✓");
+
+          if (targetsAllUsers(p)) {
+            met.push("Targets: All users ✓");
+          } else {
+            gaps.push("Users not set to \"All users\" — geo-block may not cover all accounts");
+          }
+
+          if (targetsAllApps(p)) {
+            met.push("Cloud apps: All cloud apps ✓");
+          } else {
+            gaps.push("Cloud apps not set to \"All cloud apps\" — geo-block does not protect any resources");
+          }
+
+          if (gaps.length > 0) {
+            nearMissPolicies.push({
+              policyName: p.displayName,
+              state: p.state as NearMissPolicy["state"],
+              met,
+              gaps,
+            });
+          }
+        }
+
+        // Also check disabled/report-only policies that would fully pass
+        for (const p of policies.filter(
+          (pol) => pol.state === "disabled" || pol.state === "enabledForReportingButNotEnforced"
+        )) {
+          const locs = p.conditions.locations;
+          if (
+            targetsAllUsers(p) &&
+            targetsAllApps(p) &&
+            hasGrantControl(p, "block") &&
+            locs != null &&
+            locs.includeLocations.length > 0
+          ) {
+            nearMissPolicies.push({
+              policyName: p.displayName,
+              state: p.state as NearMissPolicy["state"],
+              met: ["Satisfies all geo-blocking criteria"],
+              gaps: [
+                p.state === "disabled"
+                  ? "Policy is disabled — enable it to enforce the geo-block"
+                  : "Policy is in report-only mode — switch to On to enforce",
+              ],
+            });
+          }
+        }
+      }
+
       return {
         status: matching.length > 0 ? "pass" : "fail",
         detail:
@@ -670,9 +739,10 @@ export const CIS_CONTROLS: CISControl[] = [
             ? `Found ${matching.length} geo-blocking policy(ies).`
             : "No policy blocks access from non-allowed countries.",
         matchingPolicies: matching.map((p) => p.displayName),
+        nearMissPolicies: nearMissPolicies.length > 0 ? nearMissPolicies : undefined,
         remediation:
-          "Create a named location with allowed countries, then create a CA policy blocking all users from " +
-          "all locations except the allowed country list.",
+          "Create a named location with allowed countries, then create a CA policy targeting All users → " +
+            "All cloud apps → block access from all locations except the allowed country list.",
       };
     },
   },
