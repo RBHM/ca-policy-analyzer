@@ -192,6 +192,11 @@ async function fetchAllPages<T>(
   while (nextLink) {
     let req = client.api(nextLink);
     if (apiVersion) req = req.version(apiVersion);
+    // Request evolvable enum members (e.g. riskRemediation) that would
+    // otherwise be returned as "unknownFutureValue" by the beta endpoint
+    if (apiVersion === "beta") {
+      req = req.header("Prefer", "include-unknown-enum-members");
+    }
     const response = await req.get();
     results.push(...(response.value ?? []));
     nextLink = response["@odata.nextLink"];

@@ -198,6 +198,17 @@ function hasPhishingResistantAuthStrength(
   );
 }
 
+/**
+ * Check if a policy uses the "Require risk remediation" grant control
+ * (preview). This is a new builtInControls value that consolidates
+ * password-based and passwordless user-risk remediation into one policy.
+ * Only applies to user risk — not sign-in risk.
+ * @see https://learn.microsoft.com/entra/id-protection/concept-identity-protection-policies#require-risk-remediation-with-microsoft-managed-remediation-preview
+ */
+function hasRiskRemediation(policy: ConditionalAccessPolicy): boolean {
+  return policy.grantControls?.builtInControls.includes("riskRemediation") ?? false;
+}
+
 // ─── Near-Miss Detection ─────────────────────────────────────────────────────
 
 /**
@@ -577,7 +588,7 @@ export const CIS_CONTROLS: CISControl[] = [
     section: "5.3 - Conditional Access",
     licenseRequirement: "entraIdP2",
     description:
-      "A risk-based CA policy must require password change and MFA for medium and high-risk users " +
+      "A risk-based CA policy must require password change and MFA (or Require Risk Remediation) for medium and high-risk users " +
       "detected by Identity Protection. Promoted from L2 to L1 in v6.0.",
     policyGuidance: {
       suggestedName: "YOURORG - P2 - GLOBAL - GRANT - UserRisk-MediumHigh",
@@ -586,13 +597,14 @@ export const CIS_CONTROLS: CISControl[] = [
         { tab: "Users", instructions: ["Include → All users", "Exclude → select break-glass / emergency access accounts"] },
         { tab: "Target resources", instructions: ["Cloud apps → Include → All cloud apps"] },
         { tab: "Conditions", instructions: ["User risk → Configure Yes → check High and Medium"] },
-        { tab: "Grant", instructions: ["Grant access → check Require multifactor authentication AND Require password change"] },
+        { tab: "Grant", instructions: ["Grant access → check Require multifactor authentication AND Require password change", "OR use the new Require risk remediation control (preview) — automatically applies auth strength + sign-in frequency every time"] },
         { tab: "Enable policy", instructions: ["Set to Report-only first, then switch to On after validation", "Requires Entra ID P2 license"] },
       ],
     },
     msLearnLinks: [
-      { label: "MS Learn: Require MFA for Azure management", url: "https://learn.microsoft.com/entra/identity/conditional-access/policy-old-require-mfa-azure-mgmt" },
-      { label: "MS Learn: CA policy templates", url: "https://learn.microsoft.com/entra/identity/conditional-access/concept-conditional-access-policy-common" },
+      { label: "MS Learn: Require password change for high-risk users", url: "https://learn.microsoft.com/entra/identity/conditional-access/policy-risk-based-user" },
+      { label: "MS Learn: Require risk remediation (preview)", url: "https://learn.microsoft.com/entra/id-protection/concept-identity-protection-policies#require-risk-remediation-with-microsoft-managed-remediation-preview" },
+      { label: "MS Learn: Configure risk policies", url: "https://learn.microsoft.com/entra/id-protection/howto-identity-protection-configure-risk-policies" },
     ],
     check: (policies) => {
       const matching = getEnabled(policies).filter((p) => {
@@ -601,7 +613,8 @@ export const CIS_CONTROLS: CISControl[] = [
           riskLevels.length > 0 &&
           (hasGrantControl(p, "passwordChange") ||
             hasGrantControl(p, "mfa") ||
-            hasGrantControl(p, "block"))
+            hasGrantControl(p, "block") ||
+            hasRiskRemediation(p))
         );
       });
 
@@ -620,12 +633,14 @@ export const CIS_CONTROLS: CISControl[] = [
         status,
         detail:
           status === "pass"
-            ? `User risk policies cover: ${coversHigh ? "High" : ""}${coversHigh && coversMedium ? " + " : ""}${coversMedium ? "Medium" : ""} risk levels.`
+            ? `User risk policies cover: ${coversHigh ? "High" : ""}${coversHigh && coversMedium ? " + " : ""}${coversMedium ? "Medium" : ""} risk levels` +
+              (matching.some((p) => hasRiskRemediation(p)) ? " (using Require Risk Remediation)." : ".")
             : "No user risk-based CA policy found. Requires Entra ID P2.",
         matchingPolicies: matching.map((p) => p.displayName),
         remediation:
-          'Create CA policies targeting "All users" → "All cloud apps" with user risk condition set to ' +
-          '"High" and "Medium" requiring MFA + password change. Requires Entra ID P2 license.',
+          'Create a CA policy targeting "All users" → "All cloud apps" with user risk condition set to ' +
+          '"High" and "Medium". Use either Require password change + MFA, or the new Require Risk Remediation ' +
+            "control (preview) which handles both password and passwordless flows. Requires Entra ID P2.",
       };
     },
   },
@@ -1010,8 +1025,8 @@ export const CIS_CONTROLS: CISControl[] = [
     section: "5.4 - Identity Protection",
     licenseRequirement: "entraIdP2",
     description:
-      "A CA policy should block access for users with high user risk level. This ensures compromised accounts " +
-      "are immediately locked out until remediated.",
+      "A CA policy should block access or require risk remediation for users with high user risk level. This ensures compromised accounts " +
+      "are immediately locked out or forced through self-service remediation.",
     policyGuidance: {
       suggestedName: "YOURORG - P2 - GLOBAL - BLOCK - HighRiskUsers",
       portalSteps: [
@@ -1019,7 +1034,7 @@ export const CIS_CONTROLS: CISControl[] = [
         { tab: "Users", instructions: ["Include → All users", "Exclude → break-glass / emergency access accounts"] },
         { tab: "Target resources", instructions: ["Cloud apps → Include → All cloud apps"] },
         { tab: "Conditions", instructions: ["User risk → Configure Yes → select 'High'"] },
-        { tab: "Grant", instructions: ["Block access (or Grant access → Require password change + Require multifactor authentication)"] },
+        { tab: "Grant", instructions: ["Block access, OR Grant access → Require password change + MFA, OR Grant access → Require risk remediation (preview)"] },
         { tab: "Enable policy", instructions: ["Set to Report-only first, review Identity Protection risk reports, then switch to On"] },
       ],
     },
@@ -1033,7 +1048,8 @@ export const CIS_CONTROLS: CISControl[] = [
         return (
           riskLevels.includes("high") &&
           (hasGrantControl(p, "block") ||
-            hasGrantControl(p, "passwordChange"))
+            hasGrantControl(p, "passwordChange") ||
+            hasRiskRemediation(p))
         );
       });
 
@@ -1041,12 +1057,13 @@ export const CIS_CONTROLS: CISControl[] = [
         status: matching.length > 0 ? "pass" : "fail",
         detail:
           matching.length > 0
-            ? `Found ${matching.length} policy(ies) blocking or requiring remediation for high-risk users.`
+            ? `Found ${matching.length} policy(ies) blocking or requiring remediation for high-risk users` +
+              (matching.some((p) => hasRiskRemediation(p)) ? " (using Require Risk Remediation)." : ".")
             : "No policy blocks or forces remediation for high-risk users.",
         matchingPolicies: matching.map((p) => p.displayName),
         remediation:
           'Create a CA policy targeting "All users" with user risk condition set to "High" and ' +
-          'grant control "Block access" or "Require password change + MFA". Requires Entra ID P2.',
+          'grant control "Block access", "Require password change + MFA", or "Require risk remediation" (preview). Requires Entra ID P2.',
       };
     },
   },

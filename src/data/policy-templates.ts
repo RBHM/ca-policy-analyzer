@@ -1549,6 +1549,53 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
     },
   },
   {
+    id: "p2-risk-remediation-user",
+    displayName: "P2 - GLOBAL - GRANT - UserRisk-RiskRemediation",
+    category: "p2",
+    controlType: "GRANT",
+    priority: "recommended",
+    summary:
+      "Require risk remediation for medium/high-risk users (preview)",
+    rationale:
+      "The new Require Risk Remediation grant control (preview) consolidates password-based and " +
+      "passwordless user-risk self-service remediation into a single policy, reducing CA policy sprawl. " +
+      "Replaces the legacy pattern of separate passwordChange + MFA and auth strength + sign-in frequency policies.",
+    licenseRequirement: "entraIdP2",
+    cisControls: ["6.3.2"],
+    fingerprint: {
+      includeApps: ["All"],
+      targetsAllUsers: true,
+      userRiskLevels: ["high", "medium"],
+      grantControls: ["riskRemediation"],
+      grantOperator: "AND",
+    },
+    deploymentJson: {
+      displayName: "YOURORG - P2 - GLOBAL - GRANT - UserRisk-RiskRemediation",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: ["All"],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        userRiskLevels: ["high", "medium"],
+      },
+      grantControls: {
+        operator: "AND",
+        builtInControls: ["riskRemediation"],
+      },
+    },
+  },
+  {
     id: "p2-block-risky-security-registration",
     displayName: "P2 - GLOBAL - BLOCK - RiskyUsers - RegisterSecurityInfo",
     category: "p2",
