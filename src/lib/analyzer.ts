@@ -142,7 +142,8 @@ export function analyzeAllPolicies(context: TenantContext): AnalysisResult {
       ...checkSessionControls(policy),
       ...checkLocationConditions(policy, context),
       ...checkLegacyAuth(policy),
-      ...checkCABypassApps(policy, context)
+      ...checkCABypassApps(policy, context),
+      ...checkUserAgentBypass(policy)
     );
 
     findings.push(...policyFindings);
@@ -608,6 +609,92 @@ function checkCABypassApps(
   return []; // Bypass app info is now included in the consolidated App Exclusion finding
 }
 
+// ─── Check: User-Agent / Platform Bypass (MFASweep-style) ────────────────────
+// Tools like MFASweep enumerate user-agent strings to find gaps where
+// platform-specific CA policies can be bypassed by spoofing the UA.
+
+function checkUserAgentBypass(
+  policy: ConditionalAccessPolicy
+): Finding[] {
+  const findings: Finding[] = [];
+  if (policy.state === "disabled") return findings;
+
+  const platforms = policy.conditions.platforms;
+  const grant = policy.grantControls;
+  const clientAppTypes = policy.conditions.clientAppTypes;
+
+  // 1) Platform-specific policies that don't cover all platforms
+  if (platforms && platforms.includePlatforms.length > 0) {
+    const includesAll = platforms.includePlatforms.includes("all");
+
+    if (!includesAll) {
+      const targeted = platforms.includePlatforms;
+      const requiresMfa =
+        grant?.builtInControls.includes("mfa") ||
+        grant?.authenticationStrength != null;
+      const requiresCompliance =
+        grant?.builtInControls.includes("compliantDevice") ||
+        grant?.builtInControls.includes("domainJoinedDevice");
+
+      if (requiresMfa || requiresCompliance) {
+        findings.push({
+          id: nextFindingId(),
+          policyId: policy.id,
+          policyName: policy.displayName,
+          severity: "high",
+          category: "User-Agent Bypass",
+          title: `Platform condition only targets ${targeted.join(", ")} — user-agent spoofing risk`,
+          description:
+            `This policy enforces controls only for platforms: ${targeted.join(", ")}. ` +
+            `An attacker can spoof their user-agent string to appear as an unrecognized platform ` +
+            `(e.g. Linux, ChromeOS, or a custom UA) to bypass this policy entirely. ` +
+            `Tools like MFASweep actively exploit this gap by enumerating user-agent strings.`,
+          recommendation:
+            "Change the platform condition to target \"All platforms\" instead of specific platforms, or " +
+            "create a companion policy that blocks access from unknown/unsupported device platforms " +
+            "(CIS 5.3.11). This eliminates the user-agent spoofing bypass path.",
+        });
+      }
+    }
+  }
+
+  // 2) Client app type coverage gaps
+  const hasClientFilter = clientAppTypes.length > 0 && !clientAppTypes.includes("all");
+  if (hasClientFilter) {
+    const hasBrowser = clientAppTypes.includes("browser");
+    const hasMobile = clientAppTypes.includes("mobileAppsAndDesktopClients");
+    const requiresMfa =
+      grant?.builtInControls.includes("mfa") ||
+      grant?.authenticationStrength != null;
+
+    if (requiresMfa && (!hasBrowser || !hasMobile)) {
+      const missing: string[] = [];
+      if (!hasBrowser) missing.push("browser");
+      if (!hasMobile) missing.push("mobileAppsAndDesktopClients");
+
+      findings.push({
+        id: nextFindingId(),
+        policyId: policy.id,
+        policyName: policy.displayName,
+        severity: "medium",
+        category: "User-Agent Bypass",
+        title: `MFA policy does not cover client app type(s): ${missing.join(", ")}`,
+        description:
+          `This policy requires MFA but only targets client app types: ${clientAppTypes.join(", ")}. ` +
+          `Missing coverage for: ${missing.join(", ")}. An attacker can use a client matching ` +
+          `the uncovered app type to bypass MFA. MFASweep tests both browser and desktop/mobile ` +
+          `client types to find these gaps.`,
+        recommendation:
+          "Ensure MFA policies cover all modern client app types: both \"browser\" and " +
+          "\"mobileAppsAndDesktopClients\". Use a separate policy to block legacy auth " +
+          "(exchangeActiveSync + other).",
+      });
+    }
+  }
+
+  return findings;
+}
+
 // ─── Tenant-Wide Gap Analysis ────────────────────────────────────────────────
 
 function checkTenantWideGaps(context: TenantContext): Finding[] {
@@ -690,6 +777,51 @@ function checkTenantWideGaps(context: TenantContext): Finding[] {
       recommendation:
         "Ensure you have 2 break-glass accounts excluded from ALL CA policies. " +
         "These should have complex passwords and be monitored for use.",
+    });
+  }
+
+  // Check for user-agent / platform spoofing coverage (MFASweep-style)
+  const blocksUnknownPlatforms = enabled.some((p) => {
+    const platforms = p.conditions.platforms;
+    if (!platforms) return false;
+    return (
+      platforms.includePlatforms.includes("all") &&
+      platforms.excludePlatforms.length > 0 &&
+      p.grantControls?.builtInControls.includes("block")
+    );
+  });
+
+  const mfaPoliciesUseSpecificPlatforms = enabled.some((p) => {
+    const platforms = p.conditions.platforms;
+    if (!platforms || platforms.includePlatforms.length === 0) return false;
+    const requiresMfa =
+      p.grantControls?.builtInControls.includes("mfa") ||
+      p.grantControls?.authenticationStrength != null;
+    return (
+      requiresMfa &&
+      !platforms.includePlatforms.includes("all") &&
+      platforms.includePlatforms.length > 0
+    );
+  });
+
+  if (mfaPoliciesUseSpecificPlatforms && !blocksUnknownPlatforms) {
+    findings.push({
+      id: nextFindingId(),
+      policyId: "tenant-wide",
+      policyName: "Tenant-Wide Analysis",
+      severity: "high",
+      category: "User-Agent Bypass",
+      title: "MFA policies use platform-specific conditions without blocking unknown platforms",
+      description:
+        "One or more MFA policies target specific device platforms (e.g. iOS, Android, Windows) " +
+        "instead of all platforms, AND no policy blocks unknown or unsupported device platforms. " +
+        "This creates a gap exploitable by tools like MFASweep, which enumerate user-agent strings " +
+        "to find platforms where MFA is not enforced. An attacker can spoof a Linux, ChromeOS, or " +
+        "unrecognized user-agent to bypass MFA entirely.",
+      recommendation:
+        "Either change all MFA policies to target 'All platforms' (recommended), or create a " +
+        "companion policy that blocks access from unknown/unsupported device platforms per CIS 5.3.11. " +
+        "This closes the user-agent spoofing bypass path that MFASweep exploits.",
     });
   }
 

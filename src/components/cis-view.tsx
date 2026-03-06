@@ -26,7 +26,7 @@ import {
   BookOpen,
   Info,
   ExternalLink,
-  Code,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -408,18 +408,34 @@ function ControlCard({ controlResult }: { controlResult: CISControlResult }) {
                 </div>
               </div>
 
-              {/* Sample JSON Template */}
+              {/* Sample JSON Template — Download + Repo */}
               {control.policyGuidance.sampleJson && (
-                <div>
-                  <h5 className="text-xs font-medium text-cyan-400 uppercase mb-2 flex items-center gap-1.5">
-                    <Code className="h-3.5 w-3.5" />
-                    Sample CA Policy JSON Template
-                  </h5>
-                  <div className="rounded-lg bg-cyan-400/5 border border-cyan-800/30 p-4">
-                    <pre className="text-xs text-cyan-300 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
-                      {JSON.stringify(control.policyGuidance.sampleJson, null, 2)}
-                    </pre>
-                  </div>
+                <div className="flex gap-2 pt-2">
+                  <button
+                    onClick={() => {
+                      const json = JSON.stringify(control.policyGuidance!.sampleJson, null, 2);
+                      const blob = new Blob([json], { type: "application/json" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${control.id.replace(/\./g, "-")}-sample-policy.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="flex items-center gap-1.5 rounded-md border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Download JSON
+                  </button>
+                  <a
+                    href="https://github.com/Jhope188/ConditionalAccessPolicies"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 rounded-md border border-gray-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View Repo
+                  </a>
                 </div>
               )}
             </div>
