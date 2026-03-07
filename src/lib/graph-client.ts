@@ -129,12 +129,13 @@ export interface AuthenticationStrengthPolicy {
 
 // ─── Tenant Context ──────────────────────────────────────────────────────────
 
-export type LicenseRequirement = "entraIdP1" | "entraIdP2" | "intunePlan1";
+export type LicenseRequirement = "entraIdP1" | "entraIdP2" | "intunePlan1" | "workloadIdPremium";
 
 export interface TenantLicenses {
   hasEntraIdP1: boolean;
   hasEntraIdP2: boolean;
   hasIntunePlan1: boolean;
+  hasWorkloadIdPremium: boolean;
 }
 
 /** Well-known service plan IDs */
@@ -142,6 +143,7 @@ const SERVICE_PLAN_IDS: Record<string, string> = {
   entraIdP1: "41781fb2-bc02-4b7c-bd55-b576c07bb09d",
   entraIdP2: "eec0eb4f-6444-4f95-aba0-50c24d67f998",
   intunePlan1: "c1ec4a95-1f05-45b3-a911-aa3fa01094f5",
+  workloadIdPremium: "84c289f0-efcb-486f-8581-07f44fc9efad",
 };
 
 export interface TenantContext {
@@ -343,6 +345,7 @@ async function fetchSubscribedSkus(
         allPlanIds.has(SERVICE_PLAN_IDS.entraIdP2), // P2 implies P1
       hasEntraIdP2: allPlanIds.has(SERVICE_PLAN_IDS.entraIdP2),
       hasIntunePlan1: allPlanIds.has(SERVICE_PLAN_IDS.intunePlan1),
+      hasWorkloadIdPremium: allPlanIds.has(SERVICE_PLAN_IDS.workloadIdPremium),
     };
   } catch (e) {
     console.warn(
@@ -375,10 +378,17 @@ export function inferLicensesFromPolicies(
     p.grantControls?.builtInControls.includes("compliantDevice")
   );
 
+  const hasWorkloadIdPremium = enabled.some(
+    (p) =>
+      p.conditions.clientApplications?.includeServicePrincipals?.length !== undefined &&
+      (p.conditions.clientApplications?.includeServicePrincipals?.length ?? 0) > 0
+  );
+
   return {
     hasEntraIdP1: true, // CA itself requires P1
     hasEntraIdP2: hasP2,
     hasIntunePlan1: hasIntune,
+    hasWorkloadIdPremium,
   };
 }
 
@@ -395,6 +405,8 @@ export function isLicensed(
       return licenses.hasEntraIdP2;
     case "intunePlan1":
       return licenses.hasIntunePlan1;
+    case "workloadIdPremium":
+      return licenses.hasWorkloadIdPremium;
     default:
       return true;
   }

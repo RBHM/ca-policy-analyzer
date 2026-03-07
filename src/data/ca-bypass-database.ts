@@ -243,6 +243,166 @@ export const WELL_KNOWN_APP_MAP = new Map<string, WellKnownApp>(
   WELL_KNOWN_APPS.map((app) => [app.appId.toLowerCase(), app])
 );
 
+// ─── Entra ID Sync Attack Vectors ────────────────────────────────────────────
+// Source: Cloud-Architekt/AzureAD-Attack-Defense playbook
+//         - AADCSyncServiceAccount.md (password-hash-sync service account attacks)
+//         - EntraSyncAba.md (application-based auth attacks)
+//
+// These vectors document how Entra Connect / Cloud Sync identities
+// can be abused to bypass Conditional Access and escalate privilege.
+
+export interface SyncAttackVector {
+  id: string;
+  name: string;
+  /** MITRE ATT&CK technique IDs */
+  mitreTtp: string[];
+  target: "service-account" | "service-principal" | "hybrid-admin" | "connector-account";
+  severity: "critical" | "high" | "medium";
+  description: string;
+  /** Tools known to exploit this vector */
+  tools: string[];
+  /** How Conditional Access can mitigate (or why it cannot) */
+  caMitigation: string;
+  /** Source playbook file */
+  source: string;
+}
+
+export const ENTRA_SYNC_ATTACK_VECTORS: SyncAttackVector[] = [
+  // ── Service Account (Password Hash Sync) ──
+  {
+    id: "sync-credential-extraction",
+    name: "Sync Account Credential Extraction from Entra Connect DB",
+    mitreTtp: ["T1552.001"],
+    target: "service-account",
+    severity: "critical",
+    description:
+      "An attacker with local admin on the Entra Connect server can extract the plaintext MSOL_ / AADConnect sync service-account password " +
+      "from the local ADSync database using tools like AADInternals (Get-AADIntSyncCredentials) or adconnectdump. " +
+      "The sync account has DCSync-equivalent rights in Entra ID (Directory.ReadWrite.All).",
+    tools: ["AADInternals", "adconnectdump", "ADSyncDump"],
+    caMitigation:
+      "Deploy a CA policy restricting the 'Directory Synchronization Accounts' role to trusted Entra Connect server IPs only. " +
+      "The policy must target 'All Cloud Apps' for members of this directory role.",
+    source: "AADCSyncServiceAccount.md",
+  },
+  {
+    id: "sync-password-spray",
+    name: "Password Spray on Sync Service Account",
+    mitreTtp: ["T1110.003"],
+    target: "service-account",
+    severity: "high",
+    description:
+      "The MSOL_ sync service account uses a regular password. If the password is weak or has been reused, " +
+      "an attacker can password-spray it from outside the network. Successful authentication grants DCSync-equivalent " +
+      "access to read/reset passwords of any cloud user.",
+    tools: ["MSOLSpray", "Spray", "Hydra"],
+    caMitigation:
+      "Deploy a CA policy restricting login to the sync account to trusted Entra Connect server IPs only. " +
+      "The sync account cannot perform MFA, so location-based blocking is the only viable CA control.",
+    source: "AADCSyncServiceAccount.md",
+  },
+  {
+    id: "sync-tap-backdoor",
+    name: "Temporary Access Pass Backdoor on Connector Account",
+    mitreTtp: ["T1098.001"],
+    target: "connector-account",
+    severity: "high",
+    description:
+      "A Hybrid Identity Administrator can provision a Temporary Access Pass (TAP) on the on-premises connector account, " +
+      "then use it to authenticate as the sync identity from any location. TAP bypasses standard credential requirements.",
+    tools: ["Microsoft Graph API", "AADInternals"],
+    caMitigation:
+      "Restrict the connector account and Hybrid Identity Administrators via CA to trusted IPs. " +
+      "Disable TAP for synchronization-related accounts in the Authentication Methods policy.",
+    source: "AADCSyncServiceAccount.md",
+  },
+  // ── Service Principal (Application-Based Auth) ──
+  {
+    id: "sync-aba-certificate-backdoor",
+    name: "Certificate Backdoor on Entra Connect ABA Service Principal",
+    mitreTtp: ["T1098.001", "T1552.004"],
+    target: "service-principal",
+    severity: "critical",
+    description:
+      "Entra Connect ABA authenticates via a client certificate on the 'Microsoft Entra Connect Sync' service principal. " +
+      "An attacker with Application Administrator or Hybrid Identity Administrator role can add a rogue certificate or client secret, " +
+      "then use it to sign in from any IP. The SP has ADSynchronization.ReadWrite.All which allows password resets on any user.",
+    tools: ["AADInternals (Set-AADIntESTSAuth)", "Azure Portal", "Microsoft Graph API"],
+    caMitigation:
+      "Deploy a Workload Identity CA policy blocking the service principal from non-trusted locations. " +
+      "Requires Workload Identities Premium license. Use App Management Policy to block additional secrets/certificates.",
+    source: "EntraSyncAba.md",
+  },
+  {
+    id: "sync-aba-api-permission-abuse",
+    name: "ADSynchronization API Permission Abuse (Set-AADIntUserPassword)",
+    mitreTtp: ["T1528"],
+    target: "service-principal",
+    severity: "critical",
+    description:
+      "The Entra Connect service principal holds the ADSynchronization.ReadWrite.All permission which allows resetting " +
+      "any Entra ID user's password (including Global Admins) using AADInternals Set-AADIntUserPassword. " +
+      "This is by-design for password hash sync but is devastating if the SP credential is compromised.",
+    tools: ["AADInternals (Set-AADIntUserPassword)", "Custom client-credential script"],
+    caMitigation:
+      "Block the service principal from signing in outside trusted IPs via Workload Identity CA. " +
+      "Enable risk-based workload identity CA to detect anomalous sign-in behavior.",
+    source: "EntraSyncAba.md",
+  },
+  {
+    id: "sync-hybrid-admin-token-replay",
+    name: "Hybrid Identity Administrator Token Replay",
+    mitreTtp: ["T1528", "T1078.004"],
+    target: "hybrid-admin",
+    severity: "critical",
+    description:
+      "A compromised Hybrid Identity Administrator can create/modify Entra Connect configurations, provision TAPs, " +
+      "and add backdoor certificates to the sync service principal. Their tokens can be replayed to perform all these " +
+      "actions from any location if not restricted by CA.",
+    tools: ["ROADtools", "TokenTactics", "AADInternals"],
+    caMitigation:
+      "Enforce phishing-resistant MFA (FIDO2/WHfB) and compliant device requirement for the Hybrid Identity Administrator role. " +
+      "Restrict role activation to trusted IPs. Use PIM for just-in-time activation with approval.",
+    source: "AADCSyncServiceAccount.md",
+  },
+  {
+    id: "sync-soft-hard-match-takeover",
+    name: "Soft/Hard Match Account Takeover via Sync",
+    mitreTtp: ["T1078.004"],
+    target: "service-account",
+    severity: "high",
+    description:
+      "An attacker controlling the sync process can create or modify on-premises accounts that match cloud-only users " +
+      "by UPN (soft match) or ImmutableId/sourceAnchor (hard match). When synced, the on-premises identity overwrites " +
+      "the cloud user's password hash, taking over the account including Global Admins.",
+    tools: ["AADInternals (Set-AADIntAzureADObject)", "Active Directory Users & Computers"],
+    caMitigation:
+      "CA cannot directly prevent sync-based takeover. Mitigate by restricting sync scope to specific OUs, " +
+      "enabling hard match in tenant settings, and monitoring sync audit logs for unexpected user modifications.",
+    source: "AADCSyncServiceAccount.md",
+  },
+  {
+    id: "sync-aba-workload-risk-evasion",
+    name: "Workload Identity Risk Evasion Without Premium License",
+    mitreTtp: ["T1078.004"],
+    target: "service-principal",
+    severity: "high",
+    description:
+      "Without Workload Identities Premium, there are no risk detections for service principal sign-ins. " +
+      "An attacker using a stolen ABA certificate can authenticate repeatedly without triggering Identity Protection alerts. " +
+      "Anomalous credential usage, suspicious sign-in patterns, and compromised app indicators go undetected.",
+    tools: ["Any OAuth 2.0 client-credential flow tool"],
+    caMitigation:
+      "Requires Workload Identities Premium for risk-based CA. Deploy a risk-based policy blocking medium/high risk " +
+      "service principals. Without the license, location-based blocking is the only available CA control.",
+    source: "EntraSyncAba.md",
+  },
+];
+
+export const ENTRA_SYNC_ATTACK_MAP = new Map<string, SyncAttackVector>(
+  ENTRA_SYNC_ATTACK_VECTORS.map((v) => [v.id, v])
+);
+
 export const CA_IMMUNE_RESOURCE_MAP = new Map<string, CAImmuneResource>(
   CA_IMMUNE_RESOURCES.map((r) => [r.resourceId.toLowerCase(), r])
 );

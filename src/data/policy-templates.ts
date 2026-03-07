@@ -19,6 +19,7 @@ export type TemplateCategory =
   | "intune"
   | "p2"
   | "ztca"
+  | "workload"
   | "agent";
 
 export type ControlType = "BLOCK" | "GRANT" | "SESSION";
@@ -1819,6 +1820,105 @@ export const POLICY_TEMPLATES: PolicyTemplate[] = [
   },
 
   // ═══════════════════════════════════════════════════════════════════════
+  // WORKLOAD IDENTITY POLICIES
+  // ═══════════════════════════════════════════════════════════════════════
+  {
+    id: "workload-block-entra-connect-sync",
+    displayName: "WORKLOAD - BLOCK - EntraConnectIDSync - ExcludeEntraConnectIP",
+    category: "workload",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary:
+      "Block Entra Connect sync service principal from non-trusted locations",
+    rationale:
+      "Entra Connect's Application-Based Authentication (ABA) uses service principals with powerful sync API permissions (ADSynchronization.ReadWrite.All). " +
+      "An attacker who compromises the certificate or Hybrid Identity Admin role can replay tokens from any IP. " +
+      "Restricting workload identity sign-in to trusted Entra Connect server IPs limits lateral movement from on-premises compromise. " +
+      "Source: Cloud-Architekt/AzureAD-Attack-Defense — EntraSyncAba.md",
+    licenseRequirement: "workloadIdPremium",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      usesLocationCondition: true,
+    },
+    deploymentJson: {
+      displayName:
+        "YOURORG - WORKLOAD - BLOCK - EntraConnectIDSync - ExcludeEntraConnectIP",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: [],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        locations: {
+          includeLocations: ["All"],
+          excludeLocations: ["-- INSERT ENTRA CONNECT SERVER NAMED LOCATION ID --"],
+        },
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+  {
+    id: "workload-block-risky-service-principals",
+    displayName: "WORKLOAD - BLOCK - RiskyServicePrincipals",
+    category: "workload",
+    controlType: "BLOCK",
+    priority: "recommended",
+    summary:
+      "Block service principals detected as high-risk by Identity Protection",
+    rationale:
+      "Workload Identities Premium enables risk detection for service principals (anomalous credential usage, " +
+      "suspicious sign-in patterns, malicious app registrations). Blocking high-risk workload identities prevents " +
+      "compromised Entra Connect ABA identities, leaked credentials, and rogue apps from accessing resources. " +
+      "Workload identities cannot perform MFA — the only grant control available is Block. " +
+      "Source: Cloud-Architekt/AzureAD-Attack-Defense — EntraSyncAba.md",
+    licenseRequirement: "workloadIdPremium",
+    fingerprint: {
+      includeApps: ["All"],
+      grantControls: ["block"],
+      signInRiskLevels: ["high", "medium"],
+    },
+    deploymentJson: {
+      displayName: "YOURORG - WORKLOAD - BLOCK - RiskyServicePrincipals",
+      state: "disabled",
+      conditions: {
+        users: {
+          includeUsers: [],
+          excludeUsers: [],
+          includeGroups: [],
+          excludeGroups: [],
+          includeRoles: [],
+          excludeRoles: [],
+        },
+        applications: {
+          includeApplications: ["All"],
+          excludeApplications: [],
+          includeUserActions: [],
+        },
+        clientAppTypes: ["all"],
+        signInRiskLevels: ["high", "medium"],
+      },
+      grantControls: {
+        operator: "OR",
+        builtInControls: ["block"],
+      },
+    },
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════
   // AGENT POLICIES
   // ═══════════════════════════════════════════════════════════════════════
   {
@@ -2012,6 +2112,12 @@ export const CATEGORY_META: Record<
     description:
       "Advanced Zero Trust patterns for tighter security controls.",
     icon: "🔒",
+  },
+  workload: {
+    label: "Workload Identity",
+    description:
+      "Policies targeting service principals and workload identities. Requires Workload Identities Premium.",
+    icon: "⚙️",
   },
   agent: {
     label: "Agent Identity",
