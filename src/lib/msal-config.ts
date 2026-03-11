@@ -10,7 +10,7 @@ import { Configuration, LogLevel, RedirectRequest } from "@azure/msal-browser";
 // The client ID for a multi-tenant SPA (register in Entra ID → App registrations)
 // Override via NEXT_PUBLIC_MSAL_CLIENT_ID env var if you fork this project
 const CLIENT_ID =
-  process.env.NEXT_PUBLIC_MSAL_CLIENT_ID || "b8fe9cbf-f32d-4af7-87ae-0781bc0126c7";
+  process.env.NEXT_PUBLIC_MSAL_CLIENT_ID || "1265a54e-3fd7-45a8-8323-1ee2ead59bff";
 
 // Auto-detect redirect URI at runtime so it works on both localhost and GitHub Pages
 const REDIRECT_URI =
